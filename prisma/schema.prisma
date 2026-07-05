@@ -1,0 +1,151 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  founder
+  user
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(user)
+  createdAt    DateTime @default(now())
+
+  reports Report[]
+}
+
+enum Platform {
+  shopee
+  tiktok
+}
+
+enum SectionStatus {
+  draft
+  active
+}
+
+model Section {
+  id             String          @id @default(cuid())
+  platform       Platform
+  name           String
+  narrativeOrder Int
+  status         SectionStatus   @default(draft)
+  kbAnalysis     String          @default("")
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  metrics    SectionMetric[]
+  uploads    Upload[]
+  kbVersions KbVersion[]
+
+  @@unique([platform, name])
+}
+
+enum MetricType {
+  number
+  currency
+  percent
+  ratio
+}
+
+model SectionMetric {
+  id        String     @id @default(cuid())
+  sectionId String
+  key       String
+  label     String
+  type      MetricType @default(number)
+  required  Boolean    @default(false)
+
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+}
+
+model KbVersion {
+  id        String   @id @default(cuid())
+  sectionId String
+  version   Int
+  content   String
+  createdAt DateTime @default(now())
+
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+}
+
+enum ReportStatus {
+  draft
+  processing
+  done
+}
+
+model Report {
+  id           String       @id @default(cuid())
+  reportPeriod String
+  platforms    Platform[]
+  status       ReportStatus @default(draft)
+  createdById  String
+  createdAt    DateTime     @default(now())
+
+  createdBy User     @relation(fields: [createdById], references: [id])
+  uploads   Upload[]
+  flags     Flag[]
+}
+
+model Upload {
+  id             String   @id @default(cuid())
+  reportId       String
+  reportPeriod   String
+  platform       Platform
+  sectionId      String
+  imageUrl       String
+  labelConfirmed Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  report      Report       @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  section     Section      @relation(fields: [sectionId], references: [id])
+  extractions Extraction[]
+}
+
+enum ExtractionStatus {
+  ok
+  missing
+  low_confidence
+}
+
+model Extraction {
+  id                String           @id @default(cuid())
+  uploadId          String
+  key               String
+  value             Float?
+  rawText           String?
+  confidence        Float            @default(0)
+  status            ExtractionStatus @default(ok)
+  // Tahap 5: true kalau user sudah konfirmasi/koreksi manual angka ini.
+  // rawText & confidence asli TIDAK ditimpa (provenance OCR tetap utuh).
+  manuallyConfirmed Boolean          @default(false)
+
+  upload Upload @relation(fields: [uploadId], references: [id], onDelete: Cascade)
+}
+
+enum FlagSeverity {
+  info
+  tinggi
+}
+
+model Flag {
+  id        String       @id @default(cuid())
+  reportId  String
+  platform  Platform
+  section   String
+  type      String
+  severity  FlagSeverity @default(info)
+  note      String
+  createdAt DateTime     @default(now())
+
+  report Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+}

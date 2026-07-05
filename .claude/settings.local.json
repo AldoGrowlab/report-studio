@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(node *)",
+      "Bash([ -d \"$DOCS\" ])",
+      "Bash(npx next *)",
+      "Bash(npm install *)",
+      "Bash(npx eslint *)",
+      "Skill(claude-api)",
+      "Bash(sed 's/=.\\\\{0,7\\\\}/=sk-***/')",
+      "Bash(command -v magick convert)",
+      "Bash(python3 -c \"import PIL; print\\('PIL: yes', PIL.__version__\\)\")",
+      "Bash(npx tsx *)",
+      "Bash(echo \"=== tsc exit: $? ===\")",
+      "Bash(npx prisma *)",
+      "Bash(echo \"tsc exit: $?\")",
+      "Bash(echo \"eslint exit: $?\")",
+      "Bash(pkill -f \"next dev\")"
+    ]
+  }
+}
