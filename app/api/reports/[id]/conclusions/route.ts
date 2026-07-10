@@ -131,6 +131,7 @@ export async function POST(
           platform: platform as Platform,
           kbAnalysis: item.insight.section.kbAnalysis,
           sources: built.sources,
+          periodComparison: built.periodComparison,
         },
         item.points,
         instructions

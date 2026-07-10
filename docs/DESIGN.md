@@ -145,7 +145,24 @@ bukan disetel manual. — SUDAH DIIMPLEMENTASI.
 > render — `lib/period.ts`, dropdown 13 bulan terakhir berjalan) + `Upload.isPrimaryPeriod`.
 > Periode UTAMA ditandai EKSPLISIT user (tidak pernah otomatis), maks SATU per
 > (report, section) — ditegakkan server (menandai utama baru meng-unset yang lama).
-> Perhitungan persen + narasi Analyst = Tahap 6b-B (menyusul).
+>
+> IMPLEMENTASI (Tahap 6b-B, Jul 2026) — perhitungan & narasi:
+> - **Persen dihitung KODE** (`computeChainedChanges`, `lib/period.ts`), BERANTAI: tiap bulan
+>   vs bulan tepat sebelumnya secara kronologis (April,Mei,Juni → Mei-vs-April & Juni-vs-Mei;
+>   semua periode terpakai). Rumus per tipe metrik: number/currency/ratio → relatif
+>   `((baru−lama)/lama)×100`, format "+15,3%" 1 desimal; metrik bertipe PERSEN → selisih
+>   POIN PERSENTASE "+0,12 pp" 2 desimal (keputusan Jul 2026 — rumus relatif pada persen
+>   ambigu/terbaca pp).
+> - **Aturan LEWATI (tanpa mengarang)**: metrik tak ada di salah satu sisi pasangan; nilai
+>   null; pembagi 0. Tidak pernah menghasilkan 0/tebakan sebagai pengganti.
+> - **Satu bulan = SATU foto** per (report, section) — ditegakkan server saat upload & ganti
+>   bulan (duplikat ditolak); `buildAnalystSources` memvalidasi defensif (bulan lengkap,
+>   tepat satu utama, tanpa duplikat) sebelum generate.
+> - **Analyst hanya menarasikan**: prompt varian ber-perbandingan memberi blok angka per
+>   bulan + blok "Perubahan antar periode (DIHITUNG SISTEM)"; klaim naik/turun HANYA dari
+>   blok itu, kutip verbatim, fokus periode utama; metrik tanpa baris perubahan tidak boleh
+>   diklaim berubah. Persen/pp ikut kosakata `Insight.numbers` → ter-bold oleh splitter yang
+>   sama; TIDAK disimpan sebagai baris Extraction (turunan, dihitung saat generate).
 
 ## Validator & Kesimpulan (keputusan Jul 2026)
 
@@ -214,7 +231,7 @@ fotonya belum ada.
 | Visualisasi data | TIDAK pernah bikin chart dari angka. Foto asli yang tampil; angka hanya untuk analisa & caption. |
 | Penyingkatan angka | Hanya saat dibahasakan (caption/narasi), tak pernah saat disimpan. Aturan k/jt/miliar 1 desimal — lihat Prinsip #6. |
 | Notasi singkatan di screenshot | Extractor menormalkan `raw_text` → nilai PENUH secara deterministik, per-platform (`M`=juta di Shopee, `M`=miliar di TikTok). Lihat §Normalisasi Notasi Singkatan. |
-| Section dengan perbandingan periode | Penanda bulan per-FOTO (bukan per-report); foto pembanding di-upload ulang tiap bulan, tanpa memori antar-report; Extractor tak menggabung; Analyst hitung perubahan PERSEN saja. Lihat §Perbandingan Periode. |
+| Section dengan perbandingan periode | Penanda bulan per-FOTO (bukan per-report); SATU foto per bulan (duplikat ditolak server); foto pembanding di-upload ulang tiap bulan, tanpa memori antar-report; Extractor tak menggabung; persen/pp dihitung KODE berantai antar bulan berdekatan (lewati bila data tak lengkap/pembagi 0), Analyst hanya menarasikan. Lihat §Perbandingan Periode. |
 | Slide kesimpulan/summary | Ditulis VALIDATOR (bukan agent baru), per-platform di akhir bloknya masing-masing; TIDAK ada kesimpulan gabungan lintas-platform. Lihat §Validator & Kesimpulan. |
 
 ## Sistem Flag
@@ -292,10 +309,12 @@ fotonya belum ada.
   `usesPeriodComparison` per section (founder), penanda bulan per-foto ("YYYY-MM",
   dropdown 13 bulan) + periode utama eksplisit satu-per-(report, section). Lihat
   §Perbandingan Periode.
-- [ ] Tahap 6b-B — Perbandingan periode, perhitungan + narasi: persen berantai antar bulan
-  berdekatan dihitung DETERMINISTIK DI KODE dari Extraction (bukan LLM), Analyst hanya
-  menarasikan (lihat §Perbandingan Periode). Caption per-foto: bagian lama Tahap 6b,
-  masih ditunda (backlog).
+- [x] Tahap 6b-B — Perbandingan periode, perhitungan + narasi: persen/pp berantai antar
+  bulan berdekatan dihitung DETERMINISTIK DI KODE dari Extraction (`computeChainedChanges`;
+  metrik persen → poin persentase), Analyst hanya menarasikan via prompt varian; satu
+  bulan satu foto ditegakkan server; persen ikut ter-bold (kosakata `Insight.numbers`).
+  Lihat §Perbandingan Periode. Caption per-foto: bagian lama Tahap 6b, masih ditunda
+  (backlog).
 - [x] Tahap 7a — Validator, peran kesimpulan: baca SEMUA insight section satu platform →
   tulis poin kesimpulan platform itu (manual per platform dari halaman report; tabel
   `Conclusion` + `ValidatorKb`; angka verbatim dari insight, tanpa aritmetika/rekonsiliasi;

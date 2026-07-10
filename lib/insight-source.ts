@@ -1,21 +1,44 @@
 import { prisma } from "@/lib/prisma";
 import { abbreviateNumberID, type AnalystSource } from "@/lib/analyst";
+import {
+  computeChainedChanges,
+  formatMonthID,
+  type PeriodChange,
+  type PeriodData,
+} from "@/lib/period";
 
-// Satu-satunya jalan angka masuk ke model (generate insight Tahap 6a DAN revisi Validator
-// Tahap 7b): susun sumber Analyst dari Extraction TERKINI (termasuk koreksi manual Tahap 5).
-// Bentuk singkat (valueText) dihitung DETERMINISTIK di sini (Prinsip #6) — model hanya boleh
-// mengutip bentuk ini, nilai penuh tetap utuh di Extraction. Karena revisi memakai helper yang
-// sama, angka insight sesudah revisi PASTI tetap bersumber dari Extraction.
+// Satu-satunya jalan angka masuk ke model (generate insight Tahap 6a, revisi Validator
+// Tahap 7b, DAN perbandingan periode Tahap 6b): susun sumber Analyst dari Extraction
+// TERKINI (termasuk koreksi manual Tahap 5). Bentuk singkat (valueText) dihitung
+// DETERMINISTIK di sini (Prinsip #6) — model hanya boleh mengutip bentuk ini, nilai penuh
+// tetap utuh di Extraction. Untuk section ber-perbandingan, persen/pp antar bulan juga
+// dihitung DI SINI (lib/period.ts) — model tinggal menarasikan, tidak pernah menghitung.
+
+export type PeriodComparisonData = {
+  primaryMonth: string; // "YYYY-MM" — fokus cerita
+  changes: PeriodChange[]; // perubahan berantai antar bulan berdekatan, dihitung kode
+};
 
 export type SourcesResult =
-  | { ok: true; sources: AnalystSource[]; numbers: string[] }
+  | {
+      ok: true;
+      sources: AnalystSource[];
+      numbers: string[];
+      periodComparison: PeriodComparisonData | null; // null = section biasa
+    }
   | { ok: false; error: string };
 
 export async function buildAnalystSources(
   reportId: string,
   sectionId: string
 ): Promise<SourcesResult> {
-  const metrics = await prisma.sectionMetric.findMany({ where: { sectionId } });
+  const section = await prisma.section.findUnique({
+    where: { id: sectionId },
+    include: { metrics: true },
+  });
+  if (!section) {
+    return { ok: false, error: "Section tidak ditemukan." };
+  }
 
   // Urutan createdAt asc = penomoran "Sumber #n" yang sama dengan UI.
   const uploads = await prisma.upload.findMany({
@@ -36,9 +59,43 @@ export async function buildAnalystSources(
     };
   }
 
-  const metricByKey = new Map(metrics.map((m) => [m.key, m]));
+  // Validasi penanda periode (defensif — server sudah menegakkan saat upload/PATCH,
+  // tapi data lama/sudut lain harus tertangkap dengan pesan yang menyuruh membereskan).
+  if (section.usesPeriodComparison) {
+    if (uploads.some((u) => !u.periodMonth)) {
+      return {
+        ok: false,
+        error:
+          "Section ini pakai perbandingan periode, tapi ada foto tanpa penanda bulan. Lengkapi bulan tiap foto dulu.",
+      };
+    }
+    const months = uploads.map((u) => u.periodMonth as string);
+    if (new Set(months).size !== months.length) {
+      return {
+        ok: false,
+        error:
+          "Ada dua foto dengan bulan yang sama di section ini — satu bulan satu foto. Bereskan penanda bulannya dulu.",
+      };
+    }
+    const primaries = uploads.filter((u) => u.isPrimaryPeriod);
+    if (primaries.length !== 1) {
+      return {
+        ok: false,
+        error:
+          "Tandai TEPAT satu foto sebagai periode utama dulu (tombol \"Jadikan utama\").",
+      };
+    }
+  }
+
+  const metricByKey = new Map(section.metrics.map((m) => [m.key, m]));
   const sources: AnalystSource[] = uploads.map((u, i) => ({
     sourceIndex: i + 1,
+    ...(section.usesPeriodComparison
+      ? {
+          periodLabel: formatMonthID(u.periodMonth as string),
+          isPrimary: u.isPrimaryPeriod,
+        }
+      : {}),
     metrics: u.extractions
       .slice()
       .sort((a, b) => a.key.localeCompare(b.key))
@@ -66,5 +123,27 @@ export async function buildAnalystSources(
     ),
   ];
 
-  return { ok: true, sources, numbers };
+  // Perbandingan periode (Tahap 6b-B): satu upload = satu bulan; persen/pp dihitung kode.
+  // changeText masuk kosakata bold — persen di poin ikut ter-bold, splitter tak berubah.
+  let periodComparison: PeriodComparisonData | null = null;
+  if (section.usesPeriodComparison) {
+    const periods: PeriodData[] = uploads.map((u, i) => ({
+      month: u.periodMonth as string,
+      metrics: sources[i].metrics.map((m) => ({
+        key: m.key,
+        label: m.label,
+        type: m.type,
+        value: m.value,
+        valueText: m.valueText,
+      })),
+    }));
+    const changes = computeChainedChanges(periods);
+    numbers.push(...new Set(changes.map((c) => c.changeText)));
+    periodComparison = {
+      primaryMonth: uploads.find((u) => u.isPrimaryPeriod)!.periodMonth as string,
+      changes,
+    };
+  }
+
+  return { ok: true, sources, numbers, periodComparison };
 }

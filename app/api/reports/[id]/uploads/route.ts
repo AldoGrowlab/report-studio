@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { canAccessReport, MAX_UPLOAD_BYTES } from "@/lib/reports";
 import { getStorage, isAllowedImageType, buildImageKey } from "@/lib/storage";
-import { isValidPeriodMonth } from "@/lib/period";
+import { isValidPeriodMonth, formatMonthID } from "@/lib/period";
 
 // POST — upload satu screenshot + label section (satu foto satu label).
 // Body: multipart/form-data { file, sectionId, periodMonth?, isPrimaryPeriod? }
@@ -83,6 +83,20 @@ export async function POST(request: Request, ctx: RouteContext<"/api/reports/[id
     }
     periodMonth = rawMonth;
     isPrimaryPeriod = form.get("isPrimaryPeriod") === "true";
+
+    // Satu bulan = SATU foto per (report, section) — perbandingan berantai butuh tepat
+    // satu nilai per metrik per bulan (Tahap 6b-B; tanpa ini persen jadi ambigu).
+    const duplicate = await prisma.upload.findFirst({
+      where: { reportId, sectionId: section.id, periodMonth },
+    });
+    if (duplicate) {
+      return NextResponse.json(
+        {
+          error: `Bulan ${formatMonthID(periodMonth)} sudah ada fotonya di section ini — satu bulan satu foto.`,
+        },
+        { status: 400 }
+      );
+    }
   }
 
   // Simpan file ke storage (R2 atau disk lokal), lalu catat ke tabel Upload.

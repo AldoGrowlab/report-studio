@@ -80,6 +80,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/reports/[id
       platform: section.platform,
       kbAnalysis: section.kbAnalysis,
       sources,
+      periodComparison: built.periodComparison,
     });
   } catch {
     return NextResponse.json(

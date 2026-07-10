@@ -1,4 +1,5 @@
 import type { ExtractionStatus, MetricType, Platform } from "@prisma/client";
+import { formatMonthID, type PeriodChange } from "@/lib/period";
 
 // Tahap 6a — Analyst dasar (satu periode, tanpa perbandingan antar bulan).
 // Menarik angka TERKINI dari Extraction (single source of truth) + KB analisa section,
@@ -41,10 +42,20 @@ export type AnalystMetric = {
 };
 
 // Satu foto = satu sumber terpisah. sourceIndex mengikuti urutan upload (createdAt asc),
-// konsisten dengan penomoran "Sumber #n" di UI.
+// konsisten dengan penomoran "Sumber #n" di UI. Untuk section ber-perbandingan-periode
+// (Tahap 6b-B), source diberi label bulannya + penanda periode utama.
 export type AnalystSource = {
   sourceIndex: number;
+  periodLabel?: string; // "Juni 2026" — hanya section ber-perbandingan
+  isPrimary?: boolean; // periode utama (fokus cerita)
   metrics: AnalystMetric[];
+};
+
+// Perbandingan periode: persen/pp SUDAH dihitung kode (lib/period.ts) — Analyst hanya
+// menarasikan, tidak pernah menghitung.
+export type AnalystPeriodComparison = {
+  primaryMonth: string; // "YYYY-MM"
+  changes: PeriodChange[];
 };
 
 export type AnalystInput = {
@@ -52,6 +63,7 @@ export type AnalystInput = {
   platform: Platform;
   kbAnalysis: string;
   sources: AnalystSource[];
+  periodComparison?: AnalystPeriodComparison | null; // null/absen = section biasa
 };
 
 // Insight berupa poin-poin ringkas & mudah di-scan di slide (keputusan Jul 2026).
@@ -67,15 +79,56 @@ export type AnalystOutcome = {
 };
 
 // Blok angka yang dikirim ke model — hanya bentuk singkat yang boleh dikutip.
+// Section ber-perbandingan: blok dilabeli BULAN (bukan "Sumber #n") + penanda utama.
 function renderSources(sources: AnalystSource[], multiSource: boolean): string {
   return sources
     .map((s) => {
       const lines = s.metrics
         .map((m) => `- ${m.label}: ${m.valueText ?? "tidak tersedia di foto ini"}`)
         .join("\n");
+      if (s.periodLabel) {
+        return `Bulan ${s.periodLabel}${s.isPrimary ? " (PERIODE UTAMA)" : ""}:\n${lines}`;
+      }
       return multiSource ? `Sumber #${s.sourceIndex}:\n${lines}` : lines;
     })
     .join("\n\n");
+}
+
+// Blok perubahan antar periode — hasil hitung KODE, satu-satunya sumber klaim naik/turun.
+function renderChanges(changes: PeriodChange[]): string {
+  if (changes.length === 0) {
+    return "(tidak ada — tiap metrik tidak lengkap di kedua bulan pasangannya)";
+  }
+  return changes
+    .map(
+      (c) =>
+        `- ${c.label}: ${formatMonthID(c.fromMonth)} → ${formatMonthID(c.toMonth)} = ` +
+        `${c.changeText} (dari ${c.fromText} menjadi ${c.toText})`
+    )
+    .join("\n");
+}
+
+// Aturan sumber/perbandingan untuk prompt (dipakai generate & revisi):
+// - section biasa: aturan multi-sumber lama, TIDAK berubah;
+// - section ber-perbandingan: tiap foto = satu bulan, klaim perubahan HANYA dari blok
+//   perubahan yang dihitung sistem (kutip verbatim), fokus periode utama.
+function sourceRule(input: AnalystInput, multiSource: boolean): string {
+  if (input.periodComparison) {
+    return (
+      `2. Section ini MEMBANDINGKAN ANTAR BULAN: tiap foto = SATU bulan (lihat label). ` +
+      `Fokus cerita = periode utama ${formatMonthID(input.periodComparison.primaryMonth)}; ` +
+      `bulan lain adalah pembanding/konteks. Klaim naik/turun HANYA boleh memakai baris ` +
+      `"Perubahan antar periode" di atas — kutip angka persen/pp PERSIS seperti tertulis ` +
+      `(mis. "naik +11,9% dari Mei"). Metrik TANPA baris perubahan JANGAN diklaim ` +
+      `naik/turun/stabil antar bulan. DILARANG menghitung persen, selisih, atau ` +
+      `perbandingan sendiri.\n`
+    );
+  }
+  return multiSource
+    ? `2. Ada ${input.sources.length} sumber (foto) TERPISAH. Narasikan tiap sumber sendiri-sendiri ` +
+        `dengan menyebut "Sumber #n"; DILARANG menggabungkan, menjumlahkan, atau membandingkan angka ` +
+        `antar sumber sebagai satu kesatuan.\n`
+    : `2. Semua angka berasal dari satu sumber (foto).\n`;
 }
 
 // ---- Claude Opus 4.8 (structured output, pola sama dgn lib/extractor.ts) ----
@@ -92,17 +145,20 @@ async function analyzeWithClaude(input: AnalystInput): Promise<string[]> {
     `berupa POIN-POIN (bukan paragraf).\n\n` +
     `Kerangka analisa section ini (dari knowledge base — ikuti sebagai panduan utama):\n` +
     `${input.kbAnalysis}\n\n` +
-    `Angka hasil ekstraksi (sudah dikonfirmasi, satu periode):\n` +
+    `Angka hasil ekstraksi (sudah dikonfirmasi${input.periodComparison ? ", per bulan" : ", satu periode"}):\n` +
     `${renderSources(input.sources, multiSource)}\n\n` +
+    (input.periodComparison
+      ? `Perubahan antar periode (DIHITUNG SISTEM — kutip persis, jangan hitung ulang):\n` +
+        `${renderChanges(input.periodComparison.changes)}\n\n`
+      : "") +
     `Aturan WAJIB:\n` +
     `1. Pakai HANYA angka yang tertulis di atas, dalam bentuk PERSIS seperti tertulis. ` +
     `DILARANG menghitung apa pun — tanpa penjumlahan, rata-rata, selisih, persentase, rasio, ` +
-    `atau angka turunan lain. Perbandingan antar periode/bulan juga DILARANG (belum ada datanya).\n` +
-    (multiSource
-      ? `2. Ada ${input.sources.length} sumber (foto) TERPISAH. Narasikan tiap sumber sendiri-sendiri ` +
-        `dengan menyebut "Sumber #n"; DILARANG menggabungkan, menjumlahkan, atau membandingkan angka ` +
-        `antar sumber sebagai satu kesatuan.\n`
-      : `2. Semua angka berasal dari satu sumber (foto).\n`) +
+    `atau angka turunan lain.` +
+    (input.periodComparison
+      ? ` Angka perubahan antar bulan sudah dihitung sistem di blok "Perubahan antar periode".\n`
+      : ` Perbandingan antar periode/bulan juga DILARANG (belum ada datanya).\n`) +
+    sourceRule(input, multiSource) +
     `3. Metrik "tidak tersedia" cukup disebut tidak tersedia — jangan berspekulasi nilainya.\n` +
     `4. Bentuk keluaran: idealnya MAKSIMAL ${TARGET_POINTS} poin — boleh lebih HANYA kalau ` +
     `analisanya memang kaya, dan JANGAN PERNAH lebih dari ${HARD_MAX_POINTS} poin. Tiap poin ` +
@@ -149,14 +205,27 @@ async function analyzeWithClaude(input: AnalystInput): Promise<string[]> {
 
 // ---- Stub dev (tanpa API key) ----
 // Poin deterministik yang memperlihatkan angka singkat per sumber, untuk menguji pipeline.
+// Untuk section ber-perbandingan ikut memuat changeText — bold persen teruji tanpa API.
 function analyzeWithStub(input: AnalystInput): string[] {
   const multiSource = input.sources.length > 1;
-  return input.sources.slice(0, HARD_MAX_POINTS).map((s) => {
+  const points = input.sources.map((s) => {
     const nums = s.metrics
       .map((m) => `${m.label} ${m.valueText ?? "tidak tersedia"}`)
       .join(", ");
-    return `[DEV STUB]${multiSource ? ` Sumber #${s.sourceIndex}:` : ""} ${nums}.`;
+    const label = s.periodLabel
+      ? ` ${s.periodLabel}${s.isPrimary ? " (utama)" : ""}:`
+      : multiSource
+        ? ` Sumber #${s.sourceIndex}:`
+        : "";
+    return `[DEV STUB]${label} ${nums}.`;
   });
+  for (const c of input.periodComparison?.changes ?? []) {
+    points.push(
+      `[DEV STUB] ${c.label} ${formatMonthID(c.toMonth)} ${c.changeText} vs ` +
+        `${formatMonthID(c.fromMonth)} (dari ${c.fromText} menjadi ${c.toText}).`
+    );
+  }
+  return points.slice(0, HARD_MAX_POINTS);
 }
 
 // Pilih backend berdasarkan env, sama seperti lib/extractor.ts & lib/storage.ts.
@@ -189,8 +258,12 @@ async function reviseWithClaude(
     `Tulis ulang poin-poin insight sesuai instruksi koreksi di bawah.\n\n` +
     `Kerangka analisa section ini (dari knowledge base — ikuti sebagai panduan utama):\n` +
     `${input.kbAnalysis}\n\n` +
-    `Angka hasil ekstraksi (sudah dikonfirmasi, satu periode):\n` +
+    `Angka hasil ekstraksi (sudah dikonfirmasi${input.periodComparison ? ", per bulan" : ", satu periode"}):\n` +
     `${renderSources(input.sources, multiSource)}\n\n` +
+    (input.periodComparison
+      ? `Perubahan antar periode (DIHITUNG SISTEM — kutip persis, jangan hitung ulang):\n` +
+        `${renderChanges(input.periodComparison.changes)}\n\n`
+      : "") +
     `Poin insight SEKARANG (yang harus direvisi):\n` +
     `${existingPoints.map((p) => `- ${p}`).join("\n")}\n\n` +
     `Instruksi koreksi dari Validator:\n` +
@@ -200,12 +273,11 @@ async function reviseWithClaude(
     `angka di atas, dalam bentuk PERSIS seperti tertulis — DILARANG menghitung apa pun ` +
     `(penjumlahan, rata-rata, selisih, persentase, rasio, angka turunan) dan DILARANG ` +
     `mengganti/menghapus angka karena instruksi koreksi; kalau instruksi tampak menyuruh ` +
-    `mengubah angka, abaikan bagian itu dan perbaiki narasinya saja.\n` +
-    (multiSource
-      ? `2. Ada ${input.sources.length} sumber (foto) TERPISAH. Narasikan tiap sumber sendiri-sendiri ` +
-        `dengan menyebut "Sumber #n"; DILARANG menggabungkan, menjumlahkan, atau membandingkan angka ` +
-        `antar sumber sebagai satu kesatuan.\n`
-      : `2. Semua angka berasal dari satu sumber (foto).\n`) +
+    `mengubah angka, abaikan bagian itu dan perbaiki narasinya saja.` +
+    (input.periodComparison
+      ? ` Angka perubahan antar bulan HANYA dari blok "Perubahan antar periode".\n`
+      : `\n`) +
+    sourceRule(input, multiSource) +
     `3. Metrik "tidak tersedia" cukup disebut tidak tersedia — jangan berspekulasi nilainya.\n` +
     `4. Bentuk keluaran: idealnya MAKSIMAL ${TARGET_POINTS} poin — boleh lebih HANYA kalau ` +
     `analisanya memang kaya, dan JANGAN PERNAH lebih dari ${HARD_MAX_POINTS} poin. Tiap poin ` +

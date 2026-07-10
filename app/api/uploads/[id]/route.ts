@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { canAccessReport } from "@/lib/reports";
 import { getStorage } from "@/lib/storage";
-import { isValidPeriodMonth } from "@/lib/period";
+import { isValidPeriodMonth, formatMonthID } from "@/lib/period";
 
 // PATCH — ubah penanda periode foto tersimpan (Tahap 6b, hanya section ber-perbandingan).
 // Body: JSON { periodMonth? } dan/atau { isPrimaryPeriod: true }. Menandai utama baru
@@ -48,6 +48,24 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/uploads/[i
   if (b?.periodMonth !== undefined) {
     if (typeof b.periodMonth !== "string" || !isValidPeriodMonth(b.periodMonth)) {
       return NextResponse.json({ error: "Bulan tidak valid." }, { status: 400 });
+    }
+    // Satu bulan = SATU foto per (report, section) — tolak pindah ke bulan yang sudah
+    // dipakai foto lain (Tahap 6b-B, syarat perbandingan berantai).
+    const duplicate = await prisma.upload.findFirst({
+      where: {
+        reportId: upload.reportId,
+        sectionId: upload.sectionId,
+        periodMonth: b.periodMonth,
+        NOT: { id },
+      },
+    });
+    if (duplicate) {
+      return NextResponse.json(
+        {
+          error: `Bulan ${formatMonthID(b.periodMonth)} sudah dipakai foto lain di section ini — satu bulan satu foto.`,
+        },
+        { status: 400 }
+      );
     }
     data.periodMonth = b.periodMonth;
   }
