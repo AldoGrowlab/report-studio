@@ -55,6 +55,28 @@ type PlatformConclusion = {
   updatedAt: string;
 };
 
+// Jejak revisi Validator (Tahap 7b): before/after/alasan — tidak ada perubahan diam-diam.
+// resolved=false = cek ulang masih menemukan masalah (ter-escalate, ada flag).
+type InsightRevisionView = {
+  id: string;
+  sectionId: string;
+  pointsBefore: string[];
+  pointsAfter: string[];
+  reason: string;
+  resolved: boolean;
+  createdAt: string;
+};
+
+// Flag inkonsistensi hasil escalate Validator (Tahap 7b) — severity info, keadaan run
+// terakhir per platform. Dashboard pengumpul lintas-report = Tahap 9.
+type FlagView = {
+  id: string;
+  platform: "shopee" | "tiktok";
+  section: string;
+  note: string;
+  createdAt: string;
+};
+
 type PendingItem = {
   localId: string;
   file: File;
@@ -73,6 +95,8 @@ export default function UploadManager({
   initialUploads,
   initialInsights,
   initialConclusions,
+  initialRevisions,
+  initialFlags,
 }: {
   reportId: string;
   platforms: ("shopee" | "tiktok")[];
@@ -80,6 +104,8 @@ export default function UploadManager({
   initialUploads: SavedUpload[];
   initialInsights: SectionInsight[];
   initialConclusions: PlatformConclusion[];
+  initialRevisions: InsightRevisionView[];
+  initialFlags: FlagView[];
 }) {
   const router = useRouter();
   const [saved, setSaved] = useState<SavedUpload[]>(initialUploads);
@@ -343,13 +369,18 @@ export default function UploadManager({
     }
   }
 
-  // --- Kesimpulan Validator per platform (Tahap 7a) ---
-  // Dipicu MANUAL per platform; generate ulang MENGGANTI kesimpulan tersimpan.
+  // --- Kesimpulan Validator per platform (Tahap 7a+7b) ---
+  // Satu tombol = cek konsistensi -> revisi (maks 1x/section) -> flag sisa -> kesimpulan.
+  // Generate ulang MENGGANTI kesimpulan tersimpan.
   const [conclusions, setConclusions] = useState<Record<string, PlatformConclusion>>(() =>
     Object.fromEntries(initialConclusions.map((c) => [c.platform, c]))
   );
   const [conclusionLoading, setConclusionLoading] = useState<Record<string, boolean>>({});
   const [conclusionError, setConclusionError] = useState<Record<string, string>>({});
+  // Ringkasan cek konsistensi run terakhir (per platform) — transparansi hasil satu klik.
+  const [conclusionInfo, setConclusionInfo] = useState<Record<string, string>>({});
+  const [revisions, setRevisions] = useState<InsightRevisionView[]>(initialRevisions);
+  const [flags, setFlags] = useState<FlagView[]>(initialFlags);
 
   async function generateConclusion(platform: "shopee" | "tiktok") {
     // Peringatan ringan (non-blocking): kesimpulan idealnya membaca SEMUA insight section
@@ -385,6 +416,32 @@ export default function UploadManager({
         return;
       }
       setConclusions((p) => ({ ...p, [platform]: data.conclusion }));
+      // Tahap 7b: terapkan hasil cek konsistensi ke state — insight yang direvisi
+      // Analyst, jejak revisinya, dan flag (server mengganti flag platform ini per run).
+      for (const ins of (data.insights ?? []) as SectionInsight[]) {
+        setInsights((p) => ({ ...p, [ins.sectionId]: ins }));
+      }
+      if (Array.isArray(data.revisions) && data.revisions.length > 0) {
+        setRevisions((p) => [...(data.revisions as InsightRevisionView[]), ...p]);
+      }
+      setFlags((p) => [
+        ...((data.flags ?? []) as FlagView[]),
+        ...p.filter((f) => f.platform !== platform),
+      ]);
+      if (data.consistency) {
+        const c = data.consistency as {
+          issuesFound: number;
+          revised: number;
+          escalated: number;
+        };
+        setConclusionInfo((p) => ({
+          ...p,
+          [platform]:
+            c.issuesFound === 0
+              ? "Cek konsistensi: tidak ada masalah."
+              : `Cek konsistensi: ${c.issuesFound} temuan · ${c.revised} insight direvisi · ${c.escalated} flag.`,
+        }));
+      }
     } catch {
       setConclusionError((p) => ({ ...p, [platform]: "Kesalahan jaringan." }));
     } finally {
@@ -834,6 +891,71 @@ export default function UploadManager({
                               {insight.generator === "stub" && " · stub dev"} ·{" "}
                               {new Date(insight.updatedAt).toLocaleString("id-ID")}
                             </p>
+
+                            {/* Jejak revisi Validator (Tahap 7b): before/after + alasan —
+                                transparan, tidak ada perubahan diam-diam. Bold pakai
+                                kosakata angka insight (angka tak berubah saat revisi). */}
+                            {revisions
+                              .filter((r) => r.sectionId === g.sectionId)
+                              .map((rev) => {
+                                const renderPoints = (points: string[]) => (
+                                  <ul className="mt-1 space-y-1 text-xs text-neutral-300">
+                                    {points.map((point, pi) => (
+                                      <li key={pi} className="flex gap-1.5">
+                                        <span className="text-neutral-600">•</span>
+                                        <span>
+                                          {splitByNumbers(point, insight.numbers).map(
+                                            (seg, si) =>
+                                              seg.bold ? (
+                                                <strong
+                                                  key={si}
+                                                  className="font-semibold text-neutral-100"
+                                                >
+                                                  {seg.text}
+                                                </strong>
+                                              ) : (
+                                                <span key={si}>{seg.text}</span>
+                                              )
+                                          )}
+                                        </span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                );
+                                return (
+                                  <div
+                                    key={rev.id}
+                                    className="mt-3 rounded-lg border border-neutral-800 bg-neutral-950 p-3"
+                                  >
+                                    <p className="text-xs font-medium text-neutral-300">
+                                      Direvisi Validator ·{" "}
+                                      {new Date(rev.createdAt).toLocaleString("id-ID")}
+                                      {!rev.resolved && (
+                                        <span className="ml-2 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
+                                          masih bermasalah — ter-escalate (lihat Flag)
+                                        </span>
+                                      )}
+                                    </p>
+                                    <p className="mt-1 whitespace-pre-line text-[11px] text-neutral-400">
+                                      Alasan: {rev.reason}
+                                    </p>
+                                    <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                                      <div>
+                                        <p className="text-[10px] font-medium uppercase tracking-wide text-neutral-500">
+                                          Sebelum
+                                        </p>
+                                        {renderPoints(rev.pointsBefore)}
+                                      </div>
+                                      <div>
+                                        <p className="text-[10px] font-medium uppercase tracking-wide text-neutral-500">
+                                          Sesudah
+                                        </p>
+                                        {renderPoints(rev.pointsAfter)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
                           </>
                         ) : (
                           !insightError[g.sectionId] && (
@@ -853,7 +975,30 @@ export default function UploadManager({
         )}
       </div>
 
-      {/* Kesimpulan Validator per platform (Tahap 7a) — mengisi slot Kesimpulan di PPT.
+      {/* Flag inkonsistensi (Tahap 7b) — hasil escalate Validator, WAJIB terlihat
+          (bukan terkubur di log). Keadaan run "Buat kesimpulan" terakhir per platform. */}
+      {flags.length > 0 && (
+        <div className="mt-8 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
+          <h3 className="text-sm font-medium text-amber-300">
+            Flag ({flags.length}) — perlu dilihat
+          </h3>
+          <ul className="mt-2 space-y-2">
+            {flags.map((f) => (
+              <li key={f.id} className="text-xs text-neutral-300">
+                <span className="font-medium text-amber-200">
+                  ⚠ [{f.platform === "shopee" ? "Shopee" : "TikTok"}] {f.section}
+                </span>
+                <span className="mt-0.5 block whitespace-pre-line text-neutral-400">
+                  {f.note}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Kesimpulan Validator per platform (Tahap 7a+7b) — satu tombol menjalankan cek
+          konsistensi -> revisi -> kesimpulan; mengisi slot Kesimpulan di PPT.
           Per-platform, tak pernah gabungan lintas-platform (DESIGN Prinsip #4). */}
       <div className="mt-8">
         <h3 className="text-sm font-medium text-neutral-300">Kesimpulan</h3>
@@ -876,7 +1021,7 @@ export default function UploadManager({
                     className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-800 disabled:opacity-50"
                   >
                     {conclusionLoading[platform]
-                      ? "Merangkum…"
+                      ? "Memeriksa & merangkum…"
                       : conclusion
                         ? "Generate ulang"
                         : "Buat kesimpulan"}
@@ -908,6 +1053,7 @@ export default function UploadManager({
                       ))}
                     </ul>
                     <p className="mt-2 text-[10px] text-neutral-500">
+                      {conclusionInfo[platform] && `${conclusionInfo[platform]} · `}
                       {conclusion.generator === "stub" && "stub dev · "}
                       {new Date(conclusion.updatedAt).toLocaleString("id-ID")}
                     </p>

@@ -124,3 +124,123 @@ export async function generateConclusion(input: ValidatorInput): Promise<Validat
   }
   return { generator: "stub", points: concludeWithStub(input) };
 }
+
+// ---- Cek konsistensi antar-insight (Tahap 7b) ----
+// HANYA dua jenis cek, keduanya TANPA KB (penilaian koherensi umum — DESIGN §Validator &
+// Kesimpulan: "cek logika/kontradiksi = instruksi bawaan, TANPA KB"):
+//   kontradiksi — dua insight yang bertentangan secara logika;
+//   tone        — nada loncat-loncat antar section tanpa alasan.
+// Cek konsistensi-GAYA (butuh KB general) DITUNDA. Validator TIDAK menulis ulang —
+// tiap temuan menunjuk SATU section + instruksi koreksi untuk dieksekusi Analyst.
+
+export type ConsistencyIssueKind = "kontradiksi" | "tone";
+
+export type ConsistencyIssue = {
+  sectionIndex: number; // indeks pada input.sections (bukan id — model tak lihat id)
+  kind: ConsistencyIssueKind;
+  finding: string; // inkonsistensi yang ditemukan (alasan revisi — disimpan di jejak)
+  instruction: string; // instruksi koreksi untuk Analyst (bukan tulisan pengganti)
+};
+
+export type ConsistencyInput = {
+  platform: Platform;
+  sections: ValidatorSection[]; // urut narrativeOrder, indeks = sectionIndex
+};
+
+export type ConsistencyOutcome = {
+  generator: "claude" | "stub";
+  issues: ConsistencyIssue[];
+};
+
+async function checkWithClaude(input: ConsistencyInput): Promise<ConsistencyIssue[]> {
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  const client = new Anthropic();
+
+  const platformLabel = input.platform === "shopee" ? "Shopee" : "TikTok";
+  const numbered = input.sections
+    .map(
+      (s, i) =>
+        `Section ${i} — "${s.sectionName}":\n${s.points.map((p) => `- ${p}`).join("\n")}`
+    )
+    .join("\n\n");
+
+  const instruction =
+    `Kamu Narrative Validator report performa online shop. Periksa KONSISTENSI antar-insight ` +
+    `section platform ${platformLabel} berikut.\n\n${numbered}\n\n` +
+    `Periksa HANYA dua jenis masalah ini:\n` +
+    `1. "kontradiksi" — dua insight yang bertentangan secara logika (mis. satu section bilang ` +
+    `sebuah hal naik/kuat, section lain bilang hal yang sama turun/lemah tanpa penjelasan).\n` +
+    `2. "tone" — nada antar section loncat-loncat tanpa alasan (mis. satu section sangat ` +
+    `optimis, section lain sangat pesimis padahal datanya sejalan).\n\n` +
+    `Aturan WAJIB:\n` +
+    `a. JANGAN memeriksa hal lain: gaya penulisan, panjang kalimat, pilihan kata, kelengkapan ` +
+    `analisa, atau kebenaran angka BUKAN urusanmu di pemeriksaan ini.\n` +
+    `b. Angka bernama sama di section berbeda (mis. GMV) BOLEH berbeda nilainya — konteks/` +
+    `filternya beda dan itu SAH, BUKAN kontradiksi. Kontradiksi adalah pertentangan KLAIM/` +
+    `NARASI, bukan perbedaan angka.\n` +
+    `c. Untuk tiap masalah, tunjuk SATU section (sectionIndex) yang insight-nya paling tepat ` +
+    `dikoreksi, tulis "finding" (uraian singkat inkonsistensinya) dan "instruction" (instruksi ` +
+    `koreksi untuk analis section itu). Kamu TIDAK menulis ulang insight — analis yang merevisi.\n` +
+    `d. Instruksi koreksi HANYA boleh menyangkut narasi/tone — DILARANG menyuruh mengubah, ` +
+    `menambah, menghapus, atau menghitung ulang angka apa pun.\n` +
+    `e. Kalau tidak ada masalah, kembalikan issues kosong. Jangan mengada-ada masalah kecil — ` +
+    `hanya inkonsistensi yang nyata mengganggu kesatuan cerita.`;
+
+  const schema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      issues: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            sectionIndex: { type: "integer" },
+            kind: { type: "string", enum: ["kontradiksi", "tone"] },
+            finding: { type: "string" },
+            instruction: { type: "string" },
+          },
+          required: ["sectionIndex", "kind", "finding", "instruction"],
+        },
+      },
+    },
+    required: ["issues"],
+  } as const;
+
+  const response = await client.messages.create({
+    model: MODEL,
+    max_tokens: 16000,
+    thinking: { type: "adaptive" },
+    output_config: { format: { type: "json_schema", schema } },
+    messages: [{ role: "user", content: instruction }],
+  });
+
+  const textBlock = response.content.find((b) => b.type === "text");
+  if (!textBlock || textBlock.type !== "text") {
+    throw new Error("Validator (cek konsistensi): respons model tidak berisi teks.");
+  }
+  const parsed = JSON.parse(textBlock.text) as { issues?: ConsistencyIssue[] };
+  // Buang temuan yang menunjuk section di luar daftar (model meleset) — lebih baik
+  // kehilangan satu temuan daripada merevisi section yang salah.
+  return (parsed.issues ?? []).filter(
+    (i) =>
+      Number.isInteger(i.sectionIndex) &&
+      i.sectionIndex >= 0 &&
+      i.sectionIndex < input.sections.length &&
+      (i.kind === "kontradiksi" || i.kind === "tone") &&
+      typeof i.finding === "string" &&
+      typeof i.instruction === "string"
+  );
+}
+
+export async function checkConsistency(
+  input: ConsistencyInput
+): Promise<ConsistencyOutcome> {
+  if (process.env.ANTHROPIC_API_KEY) {
+    const issues = await checkWithClaude(input);
+    return { generator: "claude", issues };
+  }
+  // Stub dev: selalu konsisten — alur lolos tanpa revisi/flag, pipeline tetap teruji.
+  return { generator: "stub", issues: [] };
+}

@@ -167,3 +167,94 @@ export async function generateInsight(input: AnalystInput): Promise<AnalystOutco
   }
   return { generator: "stub", points: analyzeWithStub(input) };
 }
+
+// ---- Revisi insight atas instruksi Validator (Tahap 7b) ----
+// ANALYST yang merevisi (pegang KB section), Validator hanya memberi instruksi koreksi.
+// PRESISI: bahan angka SAMA dengan generate awal (valueText dari Extraction via helper
+// bersama) dan aturan prompt sama — revisi menyentuh narasi/konsistensi, BUKAN angka.
+async function reviseWithClaude(
+  input: AnalystInput,
+  existingPoints: string[],
+  instructions: string[]
+): Promise<string[]> {
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  const client = new Anthropic();
+
+  const platformLabel = input.platform === "shopee" ? "Shopee" : "TikTok";
+  const multiSource = input.sources.length > 1;
+
+  const instruction =
+    `Kamu analis performa online shop. Insight section "${input.sectionName}" (platform ` +
+    `${platformLabel}) yang kamu tulis diperiksa Narrative Validator dan perlu DIREVISI. ` +
+    `Tulis ulang poin-poin insight sesuai instruksi koreksi di bawah.\n\n` +
+    `Kerangka analisa section ini (dari knowledge base — ikuti sebagai panduan utama):\n` +
+    `${input.kbAnalysis}\n\n` +
+    `Angka hasil ekstraksi (sudah dikonfirmasi, satu periode):\n` +
+    `${renderSources(input.sources, multiSource)}\n\n` +
+    `Poin insight SEKARANG (yang harus direvisi):\n` +
+    `${existingPoints.map((p) => `- ${p}`).join("\n")}\n\n` +
+    `Instruksi koreksi dari Validator:\n` +
+    `${instructions.map((s) => `- ${s}`).join("\n")}\n\n` +
+    `Aturan WAJIB (sama dengan penulisan awal):\n` +
+    `1. Revisi menyangkut NARASI/KONSISTENSI saja. Pakai HANYA angka yang tertulis di blok ` +
+    `angka di atas, dalam bentuk PERSIS seperti tertulis — DILARANG menghitung apa pun ` +
+    `(penjumlahan, rata-rata, selisih, persentase, rasio, angka turunan) dan DILARANG ` +
+    `mengganti/menghapus angka karena instruksi koreksi; kalau instruksi tampak menyuruh ` +
+    `mengubah angka, abaikan bagian itu dan perbaiki narasinya saja.\n` +
+    (multiSource
+      ? `2. Ada ${input.sources.length} sumber (foto) TERPISAH. Narasikan tiap sumber sendiri-sendiri ` +
+        `dengan menyebut "Sumber #n"; DILARANG menggabungkan, menjumlahkan, atau membandingkan angka ` +
+        `antar sumber sebagai satu kesatuan.\n`
+      : `2. Semua angka berasal dari satu sumber (foto).\n`) +
+    `3. Metrik "tidak tersedia" cukup disebut tidak tersedia — jangan berspekulasi nilainya.\n` +
+    `4. Bentuk keluaran: idealnya MAKSIMAL ${TARGET_POINTS} poin — boleh lebih HANYA kalau ` +
+    `analisanya memang kaya, dan JANGAN PERNAH lebih dari ${HARD_MAX_POINTS} poin. Tiap poin ` +
+    `SATU kalimat ringkas yang mudah di-scan di slide presentasi. JANGAN menulis simbol ` +
+    `bullet/nomor di awal poin. TANPA caption, TANPA judul.\n` +
+    `5. Poin yang tidak disinggung instruksi koreksi pertahankan maknanya (boleh disesuaikan ` +
+    `seperlunya agar keseluruhan tetap koheren).`;
+
+  const schema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      points: { type: "array", items: { type: "string" } },
+    },
+    required: ["points"],
+  } as const;
+
+  const response = await client.messages.create({
+    model: MODEL,
+    max_tokens: 16000,
+    thinking: { type: "adaptive" },
+    output_config: { format: { type: "json_schema", schema } },
+    messages: [{ role: "user", content: instruction }],
+  });
+
+  const textBlock = response.content.find((b) => b.type === "text");
+  if (!textBlock || textBlock.type !== "text") {
+    throw new Error("Analyst (revisi): respons model tidak berisi teks.");
+  }
+  const parsed = JSON.parse(textBlock.text) as { points?: string[] };
+  const points = (parsed.points ?? [])
+    .map((p) => (typeof p === "string" ? p.trim() : ""))
+    .filter((p) => p.length > 0)
+    .slice(0, HARD_MAX_POINTS);
+  if (points.length === 0) {
+    throw new Error("Analyst (revisi): model tidak mengembalikan poin insight.");
+  }
+  return points;
+}
+
+export async function reviseInsight(
+  input: AnalystInput,
+  existingPoints: string[],
+  instructions: string[]
+): Promise<AnalystOutcome> {
+  if (process.env.ANTHROPIC_API_KEY) {
+    const points = await reviseWithClaude(input, existingPoints, instructions);
+    return { generator: "claude", points };
+  }
+  // Stub dev: no-op — poin lama apa adanya (pipeline & jejak tetap teruji tanpa API).
+  return { generator: "stub", points: existingPoints };
+}

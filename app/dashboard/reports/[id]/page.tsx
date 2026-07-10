@@ -63,6 +63,41 @@ export default async function ReportDetailPage({
     updatedAt: c.updatedAt.toISOString(),
   }));
 
+  // Tahap 7b — jejak revisi Validator (before/after/alasan, per insight) + flag
+  // inkonsistensi hasil escalate: WAJIB terlihat di halaman report, bukan terkubur di log.
+  const revisions = await prisma.insightRevision.findMany({
+    where: { insight: { reportId: id } },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      pointsBefore: true,
+      pointsAfter: true,
+      reason: true,
+      resolved: true,
+      createdAt: true,
+      insight: { select: { sectionId: true } },
+    },
+  });
+  const initialRevisions = revisions.map((r) => ({
+    id: r.id,
+    sectionId: r.insight.sectionId,
+    pointsBefore: r.pointsBefore,
+    pointsAfter: r.pointsAfter,
+    reason: r.reason,
+    resolved: r.resolved,
+    createdAt: r.createdAt.toISOString(),
+  }));
+
+  const flags = await prisma.flag.findMany({
+    where: { reportId: id, type: "inkonsistensi" },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, platform: true, section: true, note: true, createdAt: true },
+  });
+  const initialFlags = flags.map((f) => ({
+    ...f,
+    createdAt: f.createdAt.toISOString(),
+  }));
+
   // Section aktif untuk platform report ini (urut narasi) — bahan dropdown label.
   const sections = await prisma.section.findMany({
     where: { status: "active", platform: { in: report.platforms } },
@@ -119,6 +154,8 @@ export default async function ReportDetailPage({
           initialUploads={initialUploads}
           initialInsights={initialInsights}
           initialConclusions={initialConclusions}
+          initialRevisions={initialRevisions}
+          initialFlags={initialFlags}
         />
       </div>
     </div>

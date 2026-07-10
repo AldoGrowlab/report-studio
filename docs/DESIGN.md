@@ -171,7 +171,20 @@ bukan disetel manual. — SUDAH DIIMPLEMENTASI.
   identitasnya beda (per-platform vs per-section) dan query Insight lama tak perlu berubah.
   Dua KB Validator di tabel `ValidatorKb` (satu baris per platform: `kbGeneral` +
   `kbConclusion`), diisi founder via `/dashboard/validator-kb`; kosong = sah (prompt memakai
-  penilaian umum). Cek konsistensi + loop revisi + flag = Tahap 7b (belum dibangun).
+  penilaian umum).
+- **Implementasi cek konsistensi (Tahap 7b, Jul 2026):** terpicu tombol "Buat kesimpulan"
+  yang sama — satu klik = cek → revisi → kesimpulan. Dua cek bawaan TANPA KB: kontradiksi
+  logika antar-insight + tone loncat tanpa alasan (cek konsistensi-GAYA butuh KB general —
+  DITUNDA, lihat backlog). Validator TIDAK menulis ulang: tiap temuan menunjuk SATU section +
+  INSTRUKSI koreksi; ANALYST yang merevisi (KB section + angka dari Extraction via helper
+  bersama `lib/insight-source.ts` — angka TIDAK boleh berubah, aturan prompt sama dengan
+  generate awal). Maks 1 putaran revisi per section per run, lalu cek ULANG sekali; masih
+  bermasalah → escalate + `Flag` (type `inkonsistensi`, severity `info` — bukan `tinggi`,
+  itu untuk presisi angka) — kesimpulan TETAP ditulis (Prinsip #3). Flag = keadaan run
+  terakhir per (report, platform): run baru menghapus flag inkonsistensi lama. Jejak revisi
+  di tabel `InsightRevision` (before + after + alasan + instruksi + resolved) — tidak ada
+  perubahan diam-diam; tampil di halaman report (before/after berdampingan); generate ulang
+  insight manual menghapus jejak generasi lama. Dashboard flag lintas-report = Tahap 9.
 
 ## Alur UX
 
@@ -274,9 +287,11 @@ fotonya belum ada.
   tulis poin kesimpulan platform itu (manual per platform dari halaman report; tabel
   `Conclusion` + `ValidatorKb`; angka verbatim dari insight, tanpa aritmetika/rekonsiliasi;
   slot Kesimpulan PPT terisi). Lihat catatan implementasi di §Validator & Kesimpulan.
-- [ ] Tahap 7b — Validator, cek konsistensi: logika/kontradiksi via instruksi bawaan TANPA
-  KB, gaya via KB general/merangkai; loop revisi 1x (instruksi koreksi ke Analyst, bukan
-  tulis ulang), escalate + flag (lihat §Validator & Kesimpulan)
+- [x] Tahap 7b — Validator, cek konsistensi: kontradiksi logika + tone via instruksi bawaan
+  TANPA KB; loop revisi 1x (instruksi koreksi ke Analyst, bukan tulis ulang; angka tetap
+  dari Extraction), cek ulang, escalate + flag `inkonsistensi` severity `info`; jejak revisi
+  `InsightRevision` tampil di halaman report. CATATAN: cek konsistensi-GAYA (via KB
+  general/merangkai) DITUNDA → backlog. Lihat catatan implementasi di §Validator & Kesimpulan.
 - [x] Tahap 8 — Template Engine: `.pptx` deterministik (TANPA AI) via `pptxgenjs`, builder murni
   `lib/ppt.ts`. Per blok platform (Shopee dulu): cover → slide per section (urut `narrativeOrder`;
   section masuk = yang punya upload; foto EMBEDDED di kiri — semua foto section satu slide, caption
@@ -295,7 +310,10 @@ fotonya belum ada.
 **Backlog (disengaja ditunda, keputusan audit Jul 2026):**
 - Penanda bulan per-foto + flag perbandingan-periode di Section → Tahap 6b (lihat §Perbandingan Periode).
 - Versioning `ValidatorKb` (à la `KbVersion` section) + provenance KB di `Conclusion` —
-  relevan saat sistem flag (Tahap 7b/9); untuk sekarang KB Validator tanpa versi.
+  relevan saat sistem flag (Tahap 9); untuk sekarang KB Validator tanpa versi.
+- Cek konsistensi-GAYA oleh Validator (konsistensi TERHADAP GAYA agency, acuan KB
+  general/merangkai) — menyusul setelah founder mengisi KB; dua cek bawaan (kontradiksi +
+  tone) sudah jalan di Tahap 7b.
 - Konfirmasi label ringan eksplisit (saat ini: dropdown + simpan eksplisit; `labelConfirmed` selalu true).
 - Bersihkan file storage saat hapus report — route DELETE report BELUM ada; saat dibangun, WAJIB hapus
   file R2/disk semua upload dulu (cascade DB tidak menyentuh storage). Pola benar sudah ada di

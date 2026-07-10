@@ -153,10 +153,29 @@ model Insight {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  report  Report  @relation(fields: [reportId], references: [id], onDelete: Cascade)
-  section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  report    Report            @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  section   Section           @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  revisions InsightRevision[]
 
   @@unique([reportId, sectionId])
+}
+
+// Tahap 7b — jejak revisi Validator atas satu insight: TIDAK ada perubahan diam-diam.
+// Validator memberi INSTRUKSI koreksi (bukan menulis ulang); Analyst yang merevisi dengan
+// bahan angka SAMA dari Extraction (angka tak boleh berubah). Maks 1 putaran per section
+// per run; resolved=false = cek ulang masih menemukan masalah → ter-escalate (ada Flag).
+// Generate ulang insight manual menghapus jejak lama (jejak menempel pada generasi itu).
+model InsightRevision {
+  id           String   @id @default(cuid())
+  insightId    String
+  pointsBefore String[]
+  pointsAfter  String[]
+  reason       String // inkonsistensi yang ditemukan Validator (kontradiksi/tone + uraian)
+  instruction  String // instruksi koreksi Validator yang dieksekusi Analyst
+  resolved     Boolean
+  createdAt    DateTime @default(now())
+
+  insight Insight @relation(fields: [insightId], references: [id], onDelete: Cascade)
 }
 
 // Tahap 7a — kesimpulan Validator per (report, platform). Generate ulang = replace (upsert).
