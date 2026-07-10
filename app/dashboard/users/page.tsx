@@ -22,8 +22,8 @@ export default function UsersPage() {
   const [success, setSuccess] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // Refresh dari handler (buat user) — call site menyetel loading dulu.
   async function loadUsers() {
-    setLoadingList(true);
     const res = await fetch("/api/users");
     if (res.status === 403) {
       router.push("/login");
@@ -34,9 +34,21 @@ export default function UsersPage() {
     setLoadingList(false);
   }
 
+  // Muat awal di-inline (bukan panggil loadUsers): lint set-state-in-effect menandai
+  // fungsi lokal ber-setState yang dipanggil dari efek; inline membuat jelas setState
+  // terjadi SETELAH await (asinkron), bukan sinkron di badan efek.
   useEffect(() => {
-    loadUsers();
-  }, []);
+    void (async () => {
+      const res = await fetch("/api/users");
+      if (res.status === 403) {
+        router.push("/login");
+        return;
+      }
+      const data = await res.json();
+      setUsers(data.users || []);
+      setLoadingList(false);
+    })();
+  }, [router]);
 
   async function handleCreate() {
     setError("");
@@ -59,6 +71,7 @@ export default function UsersPage() {
       setPassword("");
       setRole("user");
       setSubmitting(false);
+      setLoadingList(true);
       loadUsers();
     } catch {
       setError("Terjadi kesalahan jaringan.");

@@ -63,7 +63,7 @@ export function normalizeAbbreviatedNumber(
   }
 
   // Sisakan hanya karakter angka + pemisah + tanda; buang spasi dalam ("191,1 jt").
-  let num = s.replace(/[^\d.,-]/g, "");
+  const num = s.replace(/[^\d.,-]/g, "");
   if (!/\d/.test(num)) return null;
 
   // Langkah 1 — desimal vs ribuan.

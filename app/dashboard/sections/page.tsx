@@ -56,8 +56,8 @@ export default function SectionsPage() {
   const willBeActive =
     name.trim().length > 0 && kbAnalysis.trim().length > 0 && filledMetrics.length >= 1;
 
+  // Refresh dari handler (simpan/hapus) — call site menyetel loading dulu.
   async function loadSections() {
-    setLoadingList(true);
     const res = await fetch("/api/sections");
     if (res.status === 403) {
       router.push("/login");
@@ -68,9 +68,21 @@ export default function SectionsPage() {
     setLoadingList(false);
   }
 
+  // Muat awal di-inline (bukan panggil loadSections): lint set-state-in-effect menandai
+  // fungsi lokal ber-setState yang dipanggil dari efek; inline membuat jelas setState
+  // terjadi SETELAH await (asinkron), bukan sinkron di badan efek.
   useEffect(() => {
-    loadSections();
-  }, []);
+    void (async () => {
+      const res = await fetch("/api/sections");
+      if (res.status === 403) {
+        router.push("/login");
+        return;
+      }
+      const data = await res.json();
+      setSections(data.sections || []);
+      setLoadingList(false);
+    })();
+  }, [router]);
 
   function resetForm() {
     setEditingId(null);
@@ -146,6 +158,7 @@ export default function SectionsPage() {
       );
       setSubmitting(false);
       resetForm();
+      setLoadingList(true);
       loadSections();
     } catch {
       setError("Terjadi kesalahan jaringan.");
@@ -163,6 +176,7 @@ export default function SectionsPage() {
       return;
     }
     if (editingId === s.id) resetForm();
+    setLoadingList(true);
     loadSections();
   }
 
