@@ -45,6 +45,7 @@ model Section {
   metrics    SectionMetric[]
   uploads    Upload[]
   kbVersions KbVersion[]
+  insights   Insight[]
 
   @@unique([platform, name])
 }
@@ -91,9 +92,10 @@ model Report {
   createdById  String
   createdAt    DateTime     @default(now())
 
-  createdBy User     @relation(fields: [createdById], references: [id])
+  createdBy User      @relation(fields: [createdById], references: [id])
   uploads   Upload[]
   flags     Flag[]
+  insights  Insight[]
 }
 
 model Upload {
@@ -130,6 +132,30 @@ model Extraction {
   manuallyConfirmed Boolean          @default(false)
 
   upload Upload @relation(fields: [uploadId], references: [id], onDelete: Cascade)
+}
+
+// Tahap 6a — insight Analyst per (report, section). Generate ulang = replace (upsert).
+// points  = poin-poin insight (target 6 lunak, atap keras 8 — dipotong saat parsing),
+//           menggantikan paragraf tunggal (keputusan Jul 2026).
+// numbers = snapshot kosakata angka singkat (valueText) yang dikirim ke model saat generate —
+//           dipakai renderer (PPT & web) untuk mem-bold angka metrik secara DETERMINISTIK
+//           via pencocokan substring, TANPA penanda markdown dari LLM.
+// kbVersion = versi KbVersion yang dipakai saat generate (pelacakan per DESIGN §Sistem Flag).
+model Insight {
+  id        String   @id @default(cuid())
+  reportId  String
+  sectionId String
+  points    String[]
+  numbers   String[]
+  kbVersion Int
+  generator String // "claude" | "stub"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  report  Report  @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@unique([reportId, sectionId])
 }
 
 enum FlagSeverity {

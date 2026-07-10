@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { missingPhotoSections, groupBySection, formatValueID } from "@/lib/uploads-view";
+import { splitByNumbers } from "@/lib/insight-format";
 
 type SectionOption = {
   id: string;
@@ -32,6 +33,18 @@ type SavedUpload = {
   extractions: Extraction[];
 };
 
+// Insight Analyst per section (Tahap 6a) — hasil generate tersimpan di tabel Insight.
+// points = poin insight (target 6 lunak, atap keras 8); numbers = kosakata angka singkat
+// untuk bold deterministik.
+type SectionInsight = {
+  sectionId: string;
+  points: string[];
+  numbers: string[];
+  kbVersion: number;
+  generator: string;
+  updatedAt: string;
+};
+
 type PendingItem = {
   localId: string;
   file: File;
@@ -47,10 +60,12 @@ export default function UploadManager({
   reportId,
   sections,
   initialUploads,
+  initialInsights,
 }: {
   reportId: string;
   sections: SectionOption[];
   initialUploads: SavedUpload[];
+  initialInsights: SectionInsight[];
 }) {
   const router = useRouter();
   const [saved, setSaved] = useState<SavedUpload[]>(initialUploads);
@@ -280,6 +295,58 @@ export default function UploadManager({
     void patchExtraction(uploadId, e.id, e.value);
   }
 
+  // --- Insight Analyst per section (Tahap 6a) ---
+  // Generate ulang MENGGANTI insight tersimpan (satu insight per section per report).
+  const [insights, setInsights] = useState<Record<string, SectionInsight>>(() =>
+    Object.fromEntries(initialInsights.map((i) => [i.sectionId, i]))
+  );
+  const [insightLoading, setInsightLoading] = useState<Record<string, boolean>>({});
+  const [insightError, setInsightError] = useState<Record<string, string>>({});
+
+  async function generateSectionInsight(sectionId: string) {
+    setInsightLoading((p) => ({ ...p, [sectionId]: true }));
+    setInsightError((p) => ({ ...p, [sectionId]: "" }));
+    try {
+      const res = await fetch(`/api/reports/${reportId}/insights`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sectionId }),
+      });
+      if (res.status === 403) {
+        router.push("/login");
+        return;
+      }
+      const data = await res.json();
+      if (!res.ok) {
+        setInsightError((p) => ({ ...p, [sectionId]: data.error || "Generate insight gagal." }));
+        return;
+      }
+      setInsights((p) => ({ ...p, [sectionId]: data.insight }));
+    } catch {
+      setInsightError((p) => ({ ...p, [sectionId]: "Kesalahan jaringan." }));
+    } finally {
+      setInsightLoading((p) => ({ ...p, [sectionId]: false }));
+    }
+  }
+
+  // --- Unduh PPT (Tahap 8) ---
+  // Peringatan ringan sebelum generate: section berfoto yang belum punya insight akan
+  // tampil foto saja — memberi tahu, TIDAK menghalangi (report selalu bisa jadi).
+  function downloadPptx() {
+    const sectionIdsWithPhotos = [...new Set(saved.map((u) => u.sectionId))];
+    const noInsight = sectionIdsWithPhotos.filter((id) => !insights[id]);
+    if (noInsight.length > 0) {
+      const names = noInsight.map((id) => saved.find((u) => u.sectionId === id)?.sectionName ?? id);
+      const ok = window.confirm(
+        `${noInsight.length} section belum ada insight — akan tampil foto saja:\n\n` +
+          names.map((n) => `• ${n}`).join("\n") +
+          `\n\nLanjut generate PPT?`
+      );
+      if (!ok) return;
+    }
+    window.location.href = `/api/reports/${reportId}/pptx`;
+  }
+
   const statusBadge: Record<ExtractionStatus, string> = {
     ok: "bg-teal-500/15 text-teal-300",
     low_confidence: "bg-amber-500/15 text-amber-300",
@@ -424,13 +491,21 @@ export default function UploadManager({
             Foto tersimpan ({saved.length})
           </h3>
           {saved.length > 0 && (
-            <button
-              onClick={extractAll}
-              disabled={Object.values(extracting).some(Boolean)}
-              className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-800 disabled:opacity-50"
-            >
-              Ekstrak semua
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={extractAll}
+                disabled={Object.values(extracting).some(Boolean)}
+                className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-800 disabled:opacity-50"
+              >
+                Ekstrak semua
+              </button>
+              <button
+                onClick={downloadPptx}
+                className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-500"
+              >
+                Unduh PPT
+              </button>
+            </div>
           )}
         </div>
         {saved.length === 0 ? (
@@ -646,6 +721,68 @@ export default function UploadManager({
                       );
                     })}
                   </div>
+
+                  {/* Insight Analyst section ini (Tahap 6a) — insight saja, tanpa caption */}
+                  {(() => {
+                    const insight = insights[g.sectionId];
+                    return (
+                      <div className="mt-2 rounded-xl border border-neutral-800 bg-neutral-900 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-medium text-neutral-400">Insight</span>
+                          <button
+                            onClick={() => generateSectionInsight(g.sectionId)}
+                            disabled={insightLoading[g.sectionId]}
+                            className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-800 disabled:opacity-50"
+                          >
+                            {insightLoading[g.sectionId]
+                              ? "Menganalisa…"
+                              : insight
+                                ? "Generate ulang"
+                                : "Generate insight"}
+                          </button>
+                        </div>
+                        {insightError[g.sectionId] && (
+                          <p className="mt-1 text-xs text-red-400">{insightError[g.sectionId]}</p>
+                        )}
+                        {insight ? (
+                          <>
+                            <ul className="mt-2 space-y-1.5 text-sm text-neutral-200">
+                              {insight.points.map((point, pi) => (
+                                <li key={pi} className="flex gap-2">
+                                  <span className="text-neutral-500">•</span>
+                                  <span>
+                                    {/* Bold angka metrik: splitter deterministik yang sama
+                                        dengan renderer PPT (lib/insight-format.ts). */}
+                                    {splitByNumbers(point, insight.numbers).map((seg, si) =>
+                                      seg.bold ? (
+                                        <strong key={si} className="font-semibold text-white">
+                                          {seg.text}
+                                        </strong>
+                                      ) : (
+                                        <span key={si}>{seg.text}</span>
+                                      )
+                                    )}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                            <p className="mt-2 text-[10px] text-neutral-500">
+                              KB v{insight.kbVersion}
+                              {insight.generator === "stub" && " · stub dev"} ·{" "}
+                              {new Date(insight.updatedAt).toLocaleString("id-ID")}
+                            </p>
+                          </>
+                        ) : (
+                          !insightError[g.sectionId] && (
+                            <p className="mt-2 text-xs text-neutral-500">
+                              Belum ada insight. Ekstrak angka semua foto section ini dulu, lalu
+                              generate.
+                            </p>
+                          )
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}

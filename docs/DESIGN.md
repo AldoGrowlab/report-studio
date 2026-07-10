@@ -67,7 +67,8 @@ Contoh (teruji): Shopee `179.395,44K`→179395440, `2.069,95M`→2069950000, `23
 
 ```
 Data Extractor → Analyst → Narrative Validator → Template Engine
-  (presisi)      (KB section)    (KB general)        (deterministik)
+  (presisi)      (KB section)   (2 KB: merangkai      (deterministik)
+                                 + kesimpulan)
                  ↑ orchestrator tipis (pipa, bukan otak) ↑
 ```
 
@@ -80,11 +81,14 @@ Data Extractor → Analyst → Narrative Validator → Template Engine
   Untuk section berperbandingan-periode: pakai penanda bulan per-foto untuk menghitung perubahan
   dalam PERSEN saja (mis. "GMV Juni +15% vs Mei"), bulan sebagai konteks (lihat §Perbandingan Periode).
 - **Narrative Validator** — satu-satunya lapisan yang melihat semua section satu platform.
-  Memegang KB general ("cara merangkai keseluruhan"). Cek kontradiksi/koherensi. Wewenang:
-  beri instruksi koreksi (bukan tulis ulang). Loop revisi MAKS 1x; gagal → escalate + flag,
-  render tetap jalan. Jalan dua kali independen kalau dua platform dipilih.
+  Berperan GANDA (lihat §Validator & Kesimpulan): (1) cek konsistensi — wewenang: beri
+  instruksi koreksi (bukan tulis ulang), loop revisi MAKS 1x; gagal → escalate + flag,
+  render tetap jalan; (2) MENULIS slide kesimpulan/summary platform itu. Jalan dua kali
+  independen kalau dua platform dipilih.
 - **Template Engine** — deterministik (bukan LLM). Tema bulanan = config. Menempatkan foto
-  asli + caption + insight ke slide. Konsisten antar run.
+  asli + caption + insight ke slide. Konsisten antar run. Struktur PPT punya SLOT KESIMPULAN
+  di akhir tiap blok platform — diisi Validator (Tahap 7); Tahap 8 dibangun dengan slot ini
+  kosong dulu.
 - **Orchestrator** — tipis, cuma atur alur: extract → (konfirmasi angka) → analyst →
   validator → render.
 
@@ -108,7 +112,9 @@ bukan disetel manual. — SUDAH DIIMPLEMENTASI.
   terpisah, KB & metrik masing-masing.
 - **Lapisan report — dimensi.** User pilih satu platform saja atau keduanya (Shopee lalu
   TikTok). Dua platform = dua blok berurutan, tiap blok berdiri sendiri. KB general
-  per-platform; Validator jalan dua kali independen.
+  per-platform; Validator jalan dua kali independen. Tiap blok ditutup slide KESIMPULAN
+  platform itu sendiri — TIDAK ada kesimpulan gabungan lintas-platform (lihat §Validator
+  & Kesimpulan).
 
 > CATATAN IMPLEMENTASI TERTUNDA: tahap upload saat ini = satu platform per report (disederhanakan).
 > Untuk output dua-platform nanti perlu cara menyatukan dua report (Shopee + TikTok) jadi satu
@@ -134,10 +140,30 @@ bukan disetel manual. — SUDAH DIIMPLEMENTASI.
 > CATATAN IMPLEMENTASI: butuh field baru — flag perbandingan-periode di `Section` dan penanda bulan
 > di `Upload`. Belum dibangun; relevan mulai saat Analyst (Tahap 6+).
 
+## Validator & Kesimpulan (keputusan Jul 2026)
+
+- **Validator berperan ganda: cek konsistensi + TULIS kesimpulan.** Validator satu-satunya
+  lapisan yang melihat semua section satu platform — jadi lapisan paling tepat untuk merangkum.
+  TIDAK dibuat agent baru untuk kesimpulan: itu duplikasi kerja membaca-semua-section yang
+  Validator sudah lakukan.
+- **Dua bagian KB Validator** (dikelola founder):
+  - **KB general/merangkai** — "bagaimana section jadi satu cerita utuh sesuai gaya agency".
+    Sekaligus acuan cek konsistensi TERHADAP GAYA.
+  - **KB kesimpulan** — "bagaimana menulis slide kesimpulan yang baik".
+- **Cek logika/kontradiksi = instruksi bawaan, TANPA KB.** Mendeteksi dua insight yang
+  bertentangan, tone yang loncat, dsb. adalah penilaian koherensi umum — bukan aturan agency,
+  jadi tidak butuh KB.
+- **Kesimpulan per-platform, tidak pernah gabungan.** Konsisten Prinsip #4 (dua platform = dua
+  cerita terpisah, tanpa perbandingan lintas-platform): tiap platform punya slide kesimpulannya
+  sendiri di AKHIR bloknya. TIDAK ada kesimpulan gabungan lintas-platform.
+- **Slot kesimpulan di struktur PPT.** Template Engine menyediakan slot kesimpulan di akhir tiap
+  blok platform, diisi Validator (Tahap 7). Template Engine (Tahap 8) dibangun dengan slot ini
+  KOSONG dulu, supaya struktur tidak perlu dibongkar saat Validator jadi.
+
 ## Alur UX
 
-**Founder**: kelola section (nama+KB+order+metrik), tema bulanan (config), KB general
-(perangkai narasi, hidup di Validator), aturan format. Kelola user.
+**Founder**: kelola section (nama+KB+order+metrik), tema bulanan (config), dua KB Validator —
+KB general/merangkai + KB kesimpulan (lihat §Validator & Kesimpulan), aturan format. Kelola user.
 **User/Operator**: buat report → upload screenshot → label tiap foto (satu foto satu label,
 dari section aktif platform itu) → konfirmasi → generate. Sistem deteksi section aktif yang
 fotonya belum ada.
@@ -156,6 +182,7 @@ fotonya belum ada.
 | Penyingkatan angka | Hanya saat dibahasakan (caption/narasi), tak pernah saat disimpan. Aturan k/jt/miliar 1 desimal — lihat Prinsip #6. |
 | Notasi singkatan di screenshot | Extractor menormalkan `raw_text` → nilai PENUH secara deterministik, per-platform (`M`=juta di Shopee, `M`=miliar di TikTok). Lihat §Normalisasi Notasi Singkatan. |
 | Section dengan perbandingan periode | Penanda bulan per-FOTO (bukan per-report); foto pembanding di-upload ulang tiap bulan, tanpa memori antar-report; Extractor tak menggabung; Analyst hitung perubahan PERSEN saja. Lihat §Perbandingan Periode. |
+| Slide kesimpulan/summary | Ditulis VALIDATOR (bukan agent baru), per-platform di akhir bloknya masing-masing; TIDAK ada kesimpulan gabungan lintas-platform. Lihat §Validator & Kesimpulan. |
 
 ## Sistem Flag
 
@@ -180,7 +207,28 @@ fotonya belum ada.
 - LLM Extractor: Claude Opus 4.8 (`claude-opus-4-8`) via `@anthropic-ai/sdk` — vision (gambar
   base64) + structured output (`output_config.format`) + adaptive thinking. Abstraksi di
   `lib/extractor.ts` (fallback stub dev kalau `ANTHROPIC_API_KEY` kosong). Ambang low-confidence
-  0.75. Model lain belum diputuskan untuk Analyst/Validator.
+  0.75. Model Validator belum diputuskan.
+- Template Engine: `pptxgenjs` v4 (JS murni — tanpa runtime Python di deploy Railway). Builder
+  deterministik `lib/ppt.ts` (data polos → Buffer, tanpa Prisma/AI); dimensi foto dibaca dari
+  header bytes sendiri (`lib/image-size.ts`) supaya proporsi "contain" dihitung di kode, bukan
+  perilaku library. Tema netral di konstanta `THEME` — diganti config saat Tahap 10.
+- LLM Analyst: model sama dengan Extractor (`claude-opus-4-8`), structured output + adaptive
+  thinking. Abstraksi di `lib/analyst.ts` (fallback stub dev, pola sama). Penyingkatan angka
+  (Prinsip #6) dihitung DETERMINISTIK di kode — model hanya menerima & wajib mengutip bentuk
+  singkat yang sudah jadi, dilarang aritmetika apa pun. Insight = POIN-POIN (satu kalimat
+  ringkas per poin — keputusan Jul 2026, menggantikan paragraf; jumlah: TARGET 6/section
+  sebagai batas lunak, boleh lebih kalau analisa kaya, ATAP KERAS 8 — lebih dari itu
+  dipotong ambil 8 pertama saat parsing), tersimpan di
+  `Insight.points` (unik per `(report, section)` — generate ulang = replace) bersama
+  `Insight.numbers` = snapshot kosakata angka singkat yang dikirim ke model. **Bold angka
+  metrik deterministik, TANPA penanda markdown dari LLM**: renderer (PPT & web) memecah tiap
+  poin jadi run normal/bold via pencocokan substring terhadap kosakata itu (`lib/insight-format.ts`,
+  kandidat terpanjang dulu) — tak bisa rusak (tak ada sintaks penanda), dan yang di-bold pasti
+  bentuk singkat yang dihitung dari `Extraction`; angka yang ditulis model menyimpang otomatis
+  TIDAK di-bold (terlihat, bukan bold nyasar). `kb_version` insight diisi via
+  snapshot-lazy: saat generate, kalau `KbVersion` terbaru section tidak sama dengan `kbAnalysis`
+  sekarang, buat versi baru (max+1) — provenance KB persis yang dipakai, tanpa membebani route
+  section.
 
 ## Status Pembangunan
 
@@ -197,15 +245,35 @@ fotonya belum ada.
   angka yang sudah divetting manual. Bundel: dua pelengkap UI Tahap 3 — (a) deteksi & pengingat
   section aktif yang fotonya belum ada; (b) foto tersimpan dikelompokkan per section dengan penanda
   "Sumber #1/#2 — sumber terpisah" saat >1 foto.
-- [ ] Tahap 6 — Analyst (insight + caption per section, KB section)
-- [ ] Tahap 7 — Narrative Validator (KB general, loop revisi 1x, escalate+flag)
-- [ ] Tahap 8 — Template Engine (PPT: foto asli + caption + insight, tema)
+- [x] Tahap 6a — Analyst dasar: insight naratif satu-periode per section (angka terkini dari
+  `Extraction` termasuk koreksi manual; wajib semua foto section sudah diekstrak; >1 foto
+  dinarasikan per "Sumber #n" tanpa digabung; tanpa caption; UI generate + tampil di detail
+  report, founder & operator). Pem-flag-an metrik wajib hilang DITUNDA ke Tahap 7/9 —
+  insight menyebut kekurangan dalam teks, baris `Flag` belum ditulis. Revisi Jul 2026:
+  output jadi poin-poin (target 6, atap keras 8) + snapshot kosakata angka untuk bold
+  deterministik di renderer (lihat baris LLM Analyst di §Stack).
+- [ ] Tahap 6b — Analyst lanjutan: caption + perbandingan periode (flag per-section, penanda
+  bulan per-foto, perubahan PERSEN saja — lihat §Perbandingan Periode)
+- [ ] Tahap 7 — Narrative Validator: (a) cek konsistensi — logika/kontradiksi via instruksi
+  bawaan TANPA KB, gaya via KB general/merangkai; loop revisi 1x, escalate+flag; (b) tulis
+  slide kesimpulan per-platform via KB kesimpulan (lihat §Validator & Kesimpulan)
+- [x] Tahap 8 — Template Engine: `.pptx` deterministik (TANPA AI) via `pptxgenjs`, builder murni
+  `lib/ppt.ts`. Per blok platform (Shopee dulu): cover → slide per section (urut `narrativeOrder`;
+  section masuk = yang punya upload; foto EMBEDDED di kiri — semua foto section satu slide, caption
+  "Sumber #n" saat >1; insight di kanan sebagai bullet list dengan ANGKA METRIK BOLD via run
+  pptxgenjs — pencocokan kode terhadap `Insight.numbers`, bukan penanda LLM; kosong bila belum
+  ada) → slide "Kesimpulan"
+  KOSONG (slot Validator Tahap 7). Unduh dari halaman report (GET `/api/reports/[id]/pptx`),
+  peringatan ringan non-blocking bila ada section berfoto tanpa insight. Tema netral terkumpul
+  di `THEME` (`lib/ppt.ts`) — Tahap 10 tinggal mengganti. Caption per-foto (hasil Analyst 6b)
+  belum ada — slot menyusul bersama 6b. Penggabungan DUA report (Shopee+TikTok) jadi satu PPT
+  dua-blok TETAP TERTUNDA (lihat catatan §Platform).
 - [ ] Tahap 9 — Dashboard flag (founder)
 - [ ] Tahap 10 — Tema bulanan (config)
 - [ ] Tahap 11 — Deploy ke Railway
 
 **Backlog (disengaja ditunda, keputusan audit Jul 2026):**
-- Penanda bulan per-foto + flag perbandingan-periode di Section → Tahap 6 (lihat §Perbandingan Periode).
+- Penanda bulan per-foto + flag perbandingan-periode di Section → Tahap 6b (lihat §Perbandingan Periode).
 - Konfirmasi label ringan eksplisit (saat ini: dropdown + simpan eksplisit; `labelConfirmed` selalu true).
 - Bersihkan file storage saat hapus report — route DELETE report BELUM ada; saat dibangun, WAJIB hapus
   file R2/disk semua upload dulu (cascade DB tidak menyentuh storage). Pola benar sudah ada di

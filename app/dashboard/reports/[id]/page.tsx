@@ -30,6 +30,23 @@ export default async function ReportDetailPage({
   if (!report) notFound();
   if (!canAccessReport(session, report)) redirect("/dashboard/reports");
 
+  // Insight Analyst tersimpan (Tahap 6a) — satu per section, ditampilkan di grup section.
+  const insights = await prisma.insight.findMany({
+    where: { reportId: id },
+    select: {
+      sectionId: true,
+      points: true,
+      numbers: true,
+      kbVersion: true,
+      generator: true,
+      updatedAt: true,
+    },
+  });
+  const initialInsights = insights.map((i) => ({
+    ...i,
+    updatedAt: i.updatedAt.toISOString(),
+  }));
+
   // Section aktif untuk platform report ini (urut narasi) — bahan dropdown label.
   const sections = await prisma.section.findMany({
     where: { status: "active", platform: { in: report.platforms } },
@@ -83,6 +100,7 @@ export default async function ReportDetailPage({
           reportId={report.id}
           sections={sections}
           initialUploads={initialUploads}
+          initialInsights={initialInsights}
         />
       </div>
     </div>
