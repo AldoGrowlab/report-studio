@@ -159,6 +159,19 @@ bukan disetel manual. — SUDAH DIIMPLEMENTASI.
 - **Slot kesimpulan di struktur PPT.** Template Engine menyediakan slot kesimpulan di akhir tiap
   blok platform, diisi Validator (Tahap 7). Template Engine (Tahap 8) dibangun dengan slot ini
   KOSONG dulu, supaya struktur tidak perlu dibongkar saat Validator jadi.
+- **Implementasi peran kesimpulan (Tahap 7a, Jul 2026):** dipicu MANUAL per platform dari
+  halaman report (tombol "Buat kesimpulan"), bukan otomatis. Bahan = SEMUA insight section
+  platform itu (urut `narrativeOrder`); wajib ≥1 insight; section aktif tanpa insight →
+  peringatan ringan di UI (non-blocking). PRESISI: Validator TIDAK menyentuh Extraction —
+  angka hanya dikutip VERBATIM dari teks insight, prompt melarang aritmetika/penjumlahan/
+  rekonsiliasi antar section (Prinsip #1 & #2). Format & bold SERAGAM dengan insight: poin
+  (target 6 lunak, atap keras 8) + kosakata angka = union `Insight.numbers` platform itu,
+  bold deterministik via `lib/insight-format.ts`. Simpan di tabel `Conclusion` SENDIRI, unik
+  per `(report, platform)`, generate ulang = replace — bukan `Insight` + penanda, karena
+  identitasnya beda (per-platform vs per-section) dan query Insight lama tak perlu berubah.
+  Dua KB Validator di tabel `ValidatorKb` (satu baris per platform: `kbGeneral` +
+  `kbConclusion`), diisi founder via `/dashboard/validator-kb`; kosong = sah (prompt memakai
+  penilaian umum). Cek konsistensi + loop revisi + flag = Tahap 7b (belum dibangun).
 
 ## Alur UX
 
@@ -207,7 +220,10 @@ fotonya belum ada.
 - LLM Extractor: Claude Opus 4.8 (`claude-opus-4-8`) via `@anthropic-ai/sdk` — vision (gambar
   base64) + structured output (`output_config.format`) + adaptive thinking. Abstraksi di
   `lib/extractor.ts` (fallback stub dev kalau `ANTHROPIC_API_KEY` kosong). Ambang low-confidence
-  0.75. Model Validator belum diputuskan.
+  0.75.
+- LLM Validator (peran kesimpulan, Tahap 7a): model sama (`claude-opus-4-8`), structured output +
+  adaptive thinking, abstraksi `lib/validator.ts` (fallback stub dev, pola sama dgn Analyst).
+  Poin + bold memakai mekanisme Analyst persis (target/atap & `lib/insight-format.ts`).
 - Template Engine: `pptxgenjs` v4 (JS murni — tanpa runtime Python di deploy Railway). Builder
   deterministik `lib/ppt.ts` (data polos → Buffer, tanpa Prisma/AI); dimensi foto dibaca dari
   header bytes sendiri (`lib/image-size.ts`) supaya proporsi "contain" dihitung di kode, bukan
@@ -254,9 +270,13 @@ fotonya belum ada.
   deterministik di renderer (lihat baris LLM Analyst di §Stack).
 - [ ] Tahap 6b — Analyst lanjutan: caption + perbandingan periode (flag per-section, penanda
   bulan per-foto, perubahan PERSEN saja — lihat §Perbandingan Periode)
-- [ ] Tahap 7 — Narrative Validator: (a) cek konsistensi — logika/kontradiksi via instruksi
-  bawaan TANPA KB, gaya via KB general/merangkai; loop revisi 1x, escalate+flag; (b) tulis
-  slide kesimpulan per-platform via KB kesimpulan (lihat §Validator & Kesimpulan)
+- [x] Tahap 7a — Validator, peran kesimpulan: baca SEMUA insight section satu platform →
+  tulis poin kesimpulan platform itu (manual per platform dari halaman report; tabel
+  `Conclusion` + `ValidatorKb`; angka verbatim dari insight, tanpa aritmetika/rekonsiliasi;
+  slot Kesimpulan PPT terisi). Lihat catatan implementasi di §Validator & Kesimpulan.
+- [ ] Tahap 7b — Validator, cek konsistensi: logika/kontradiksi via instruksi bawaan TANPA
+  KB, gaya via KB general/merangkai; loop revisi 1x (instruksi koreksi ke Analyst, bukan
+  tulis ulang), escalate + flag (lihat §Validator & Kesimpulan)
 - [x] Tahap 8 — Template Engine: `.pptx` deterministik (TANPA AI) via `pptxgenjs`, builder murni
   `lib/ppt.ts`. Per blok platform (Shopee dulu): cover → slide per section (urut `narrativeOrder`;
   section masuk = yang punya upload; foto EMBEDDED di kiri — semua foto section satu slide, caption
@@ -274,6 +294,8 @@ fotonya belum ada.
 
 **Backlog (disengaja ditunda, keputusan audit Jul 2026):**
 - Penanda bulan per-foto + flag perbandingan-periode di Section → Tahap 6b (lihat §Perbandingan Periode).
+- Versioning `ValidatorKb` (à la `KbVersion` section) + provenance KB di `Conclusion` —
+  relevan saat sistem flag (Tahap 7b/9); untuk sekarang KB Validator tanpa versi.
 - Konfirmasi label ringan eksplisit (saat ini: dropdown + simpan eksplisit; `labelConfirmed` selalu true).
 - Bersihkan file storage saat hapus report — route DELETE report BELUM ada; saat dibangun, WAJIB hapus
   file R2/disk semua upload dulu (cascade DB tidak menyentuh storage). Pola benar sudah ada di

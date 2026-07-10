@@ -13,6 +13,7 @@ export default async function DashboardPage() {
 
   const founderMenu = [
     { label: "Section & KB", href: "/dashboard/sections" },
+    { label: "KB Validator", href: "/dashboard/validator-kb" },
     { label: "Tema bulanan", href: null },
     { label: "Dashboard flag", href: null },
     { label: "Generate report", href: "/dashboard/reports" },

@@ -24,6 +24,7 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/reports/[id
         include: { section: { select: { id: true, name: true, platform: true, narrativeOrder: true } } },
       },
       insights: { select: { sectionId: true, points: true, numbers: true } },
+      conclusions: { select: { platform: true, points: true, numbers: true } },
     },
   });
   if (!report) {
@@ -85,7 +86,13 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/reports/[id
         missingPhotos,
       });
     }
-    blocks.push({ platform, sections });
+    // Kesimpulan Validator platform ini (Tahap 7a) — belum ada = slot placeholder.
+    const conclusionRow = report.conclusions.find((c) => c.platform === platform);
+    const conclusion = conclusionRow
+      ? { points: conclusionRow.points, numbers: conclusionRow.numbers }
+      : null;
+
+    blocks.push({ platform, sections, conclusion });
   }
 
   const buffer = await buildReportPptx({ reportPeriod: report.reportPeriod, blocks });

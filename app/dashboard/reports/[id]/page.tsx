@@ -47,6 +47,22 @@ export default async function ReportDetailPage({
     updatedAt: i.updatedAt.toISOString(),
   }));
 
+  // Kesimpulan Validator tersimpan (Tahap 7a) — satu per platform report.
+  const conclusions = await prisma.conclusion.findMany({
+    where: { reportId: id },
+    select: {
+      platform: true,
+      points: true,
+      numbers: true,
+      generator: true,
+      updatedAt: true,
+    },
+  });
+  const initialConclusions = conclusions.map((c) => ({
+    ...c,
+    updatedAt: c.updatedAt.toISOString(),
+  }));
+
   // Section aktif untuk platform report ini (urut narasi) — bahan dropdown label.
   const sections = await prisma.section.findMany({
     where: { status: "active", platform: { in: report.platforms } },
@@ -98,9 +114,11 @@ export default async function ReportDetailPage({
 
         <UploadManager
           reportId={report.id}
+          platforms={report.platforms}
           sections={sections}
           initialUploads={initialUploads}
           initialInsights={initialInsights}
+          initialConclusions={initialConclusions}
         />
       </div>
     </div>

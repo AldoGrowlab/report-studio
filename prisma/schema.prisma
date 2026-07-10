@@ -92,10 +92,11 @@ model Report {
   createdById  String
   createdAt    DateTime     @default(now())
 
-  createdBy User      @relation(fields: [createdById], references: [id])
-  uploads   Upload[]
-  flags     Flag[]
-  insights  Insight[]
+  createdBy   User         @relation(fields: [createdById], references: [id])
+  uploads     Upload[]
+  flags       Flag[]
+  insights    Insight[]
+  conclusions Conclusion[]
 }
 
 model Upload {
@@ -156,6 +157,41 @@ model Insight {
   section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
 
   @@unique([reportId, sectionId])
+}
+
+// Tahap 7a — kesimpulan Validator per (report, platform). Generate ulang = replace (upsert).
+// Tabel SENDIRI (bukan Insight + penanda): identitasnya beda — Insight unik per
+// (report, section), kesimpulan unik per (report, platform) — dan query Insight lama
+// tak perlu mengecualikan apa pun. Kesimpulan TIDAK pernah gabungan lintas-platform
+// (DESIGN Prinsip #4 & §Validator & Kesimpulan).
+// points/numbers = mekanisme sama dengan Insight: poin (target 6 lunak, atap keras 8) +
+// kosakata angka singkat untuk bold deterministik — numbers = union Insight.numbers
+// semua section platform ini saat generate.
+model Conclusion {
+  id        String   @id @default(cuid())
+  reportId  String
+  platform  Platform
+  points    String[]
+  numbers   String[]
+  generator String // "claude" | "stub"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  report Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@unique([reportId, platform])
+}
+
+// Tahap 7a — dua KB Validator (DESIGN §Validator & Kesimpulan), satu baris per platform:
+// kbGeneral = KB general/merangkai; kbConclusion = KB kesimpulan. Diisi founder via
+// /dashboard/validator-kb; kosong = sah (prompt memakai penilaian umum).
+// Versioning à la KbVersion DITUNDA sampai sistem flag (7b/9) — lihat backlog DESIGN.
+model ValidatorKb {
+  id           String   @id @default(cuid())
+  platform     Platform @unique
+  kbGeneral    String   @default("")
+  kbConclusion String   @default("")
+  updatedAt    DateTime @updatedAt
 }
 
 enum FlagSeverity {

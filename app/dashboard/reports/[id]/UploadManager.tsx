@@ -45,6 +45,16 @@ type SectionInsight = {
   updatedAt: string;
 };
 
+// Kesimpulan Validator per platform (Tahap 7a) — tersimpan di tabel Conclusion.
+// Mekanisme bold sama dengan insight: numbers = union kosakata insight platform itu.
+type PlatformConclusion = {
+  platform: "shopee" | "tiktok";
+  points: string[];
+  numbers: string[];
+  generator: string;
+  updatedAt: string;
+};
+
 type PendingItem = {
   localId: string;
   file: File;
@@ -58,14 +68,18 @@ let localCounter = 0;
 
 export default function UploadManager({
   reportId,
+  platforms,
   sections,
   initialUploads,
   initialInsights,
+  initialConclusions,
 }: {
   reportId: string;
+  platforms: ("shopee" | "tiktok")[];
   sections: SectionOption[];
   initialUploads: SavedUpload[];
   initialInsights: SectionInsight[];
+  initialConclusions: PlatformConclusion[];
 }) {
   const router = useRouter();
   const [saved, setSaved] = useState<SavedUpload[]>(initialUploads);
@@ -326,6 +340,55 @@ export default function UploadManager({
       setInsightError((p) => ({ ...p, [sectionId]: "Kesalahan jaringan." }));
     } finally {
       setInsightLoading((p) => ({ ...p, [sectionId]: false }));
+    }
+  }
+
+  // --- Kesimpulan Validator per platform (Tahap 7a) ---
+  // Dipicu MANUAL per platform; generate ulang MENGGANTI kesimpulan tersimpan.
+  const [conclusions, setConclusions] = useState<Record<string, PlatformConclusion>>(() =>
+    Object.fromEntries(initialConclusions.map((c) => [c.platform, c]))
+  );
+  const [conclusionLoading, setConclusionLoading] = useState<Record<string, boolean>>({});
+  const [conclusionError, setConclusionError] = useState<Record<string, string>>({});
+
+  async function generateConclusion(platform: "shopee" | "tiktok") {
+    // Peringatan ringan (non-blocking): kesimpulan idealnya membaca SEMUA insight section
+    // platform ini — section aktif yang belum punya insight membuatnya mungkin tak lengkap.
+    const noInsight = sections.filter((s) => s.platform === platform && !insights[s.id]);
+    if (noInsight.length > 0) {
+      const ok = window.confirm(
+        `${noInsight.length} section aktif ${platform === "shopee" ? "Shopee" : "TikTok"} belum punya insight:\n\n` +
+          noInsight.map((s) => `• ${s.name}`).join("\n") +
+          `\n\nKesimpulan mungkin tidak lengkap. Lanjut buat kesimpulan?`
+      );
+      if (!ok) return;
+    }
+
+    setConclusionLoading((p) => ({ ...p, [platform]: true }));
+    setConclusionError((p) => ({ ...p, [platform]: "" }));
+    try {
+      const res = await fetch(`/api/reports/${reportId}/conclusions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platform }),
+      });
+      if (res.status === 403) {
+        router.push("/login");
+        return;
+      }
+      const data = await res.json();
+      if (!res.ok) {
+        setConclusionError((p) => ({
+          ...p,
+          [platform]: data.error || "Generate kesimpulan gagal.",
+        }));
+        return;
+      }
+      setConclusions((p) => ({ ...p, [platform]: data.conclusion }));
+    } catch {
+      setConclusionError((p) => ({ ...p, [platform]: "Kesalahan jaringan." }));
+    } finally {
+      setConclusionLoading((p) => ({ ...p, [platform]: false }));
     }
   }
 
@@ -788,6 +851,79 @@ export default function UploadManager({
             })}
           </div>
         )}
+      </div>
+
+      {/* Kesimpulan Validator per platform (Tahap 7a) — mengisi slot Kesimpulan di PPT.
+          Per-platform, tak pernah gabungan lintas-platform (DESIGN Prinsip #4). */}
+      <div className="mt-8">
+        <h3 className="text-sm font-medium text-neutral-300">Kesimpulan</h3>
+        <div className="mt-3 space-y-3">
+          {platforms.map((platform) => {
+            const conclusion = conclusions[platform];
+            const label = platform === "shopee" ? "Shopee" : "TikTok";
+            return (
+              <div
+                key={platform}
+                className="rounded-xl border border-neutral-800 bg-neutral-900 p-3"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-neutral-400">
+                    Kesimpulan {label}
+                  </span>
+                  <button
+                    onClick={() => generateConclusion(platform)}
+                    disabled={conclusionLoading[platform]}
+                    className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-800 disabled:opacity-50"
+                  >
+                    {conclusionLoading[platform]
+                      ? "Merangkum…"
+                      : conclusion
+                        ? "Generate ulang"
+                        : "Buat kesimpulan"}
+                  </button>
+                </div>
+                {conclusionError[platform] && (
+                  <p className="mt-1 text-xs text-red-400">{conclusionError[platform]}</p>
+                )}
+                {conclusion ? (
+                  <>
+                    <ul className="mt-2 space-y-1.5 text-sm text-neutral-200">
+                      {conclusion.points.map((point, pi) => (
+                        <li key={pi} className="flex gap-2">
+                          <span className="text-neutral-500">•</span>
+                          <span>
+                            {/* Bold angka metrik: splitter deterministik yang sama
+                                dengan panel insight & renderer PPT. */}
+                            {splitByNumbers(point, conclusion.numbers).map((seg, si) =>
+                              seg.bold ? (
+                                <strong key={si} className="font-semibold text-white">
+                                  {seg.text}
+                                </strong>
+                              ) : (
+                                <span key={si}>{seg.text}</span>
+                              )
+                            )}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-2 text-[10px] text-neutral-500">
+                      {conclusion.generator === "stub" && "stub dev · "}
+                      {new Date(conclusion.updatedAt).toLocaleString("id-ID")}
+                    </p>
+                  </>
+                ) : (
+                  !conclusionError[platform] && (
+                    <p className="mt-2 text-xs text-neutral-500">
+                      Belum ada kesimpulan. Generate insight semua section {label} dulu, lalu
+                      buat kesimpulan — hasilnya mengisi slide Kesimpulan di PPT.
+                    </p>
+                  )
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* Lightbox foto ukuran penuh */}
