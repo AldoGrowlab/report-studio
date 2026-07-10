@@ -39,6 +39,9 @@ model Section {
   narrativeOrder Int
   status         SectionStatus   @default(draft)
   kbAnalysis     String          @default("")
+  // Tahap 6b — opt-in founder: section ini membandingkan performa antar bulan.
+  // Foto-fotonya ditandai bulan per-FOTO (Upload.periodMonth) + satu periode utama.
+  usesPeriodComparison Boolean   @default(false)
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
@@ -107,6 +110,12 @@ model Upload {
   sectionId      String
   imageUrl       String
   labelConfirmed Boolean  @default(false)
+  // Tahap 6b — HANYA untuk section ber-perbandingan-periode (selain itu null/false):
+  // periodMonth kanonik "YYYY-MM" (urut kronologis = urut string; label "Juni 2026"
+  // hanya di render — lib/period.ts). isPrimaryPeriod ditandai EKSPLISIT user (tidak
+  // pernah otomatis), maks SATU per (report, section) — ditegakkan server.
+  periodMonth     String?
+  isPrimaryPeriod Boolean @default(false)
   createdAt      DateTime @default(now())
 
   report      Report       @relation(fields: [reportId], references: [id], onDelete: Cascade)

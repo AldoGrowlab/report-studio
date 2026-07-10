@@ -24,7 +24,8 @@ export async function PUT(request: Request, ctx: RouteContext<"/api/sections/[id
   if (!parsed.ok) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
-  const { platform, name, narrativeOrder, kbAnalysis, metrics } = parsed.data;
+  const { platform, name, narrativeOrder, kbAnalysis, usesPeriodComparison, metrics } =
+    parsed.data;
 
   const status = computeSectionStatus({
     name,
@@ -42,7 +43,7 @@ export async function PUT(request: Request, ctx: RouteContext<"/api/sections/[id
     const section = await prisma.$transaction(async (tx) => {
       await tx.section.update({
         where: { id },
-        data: { platform, name, narrativeOrder, kbAnalysis, status },
+        data: { platform, name, narrativeOrder, kbAnalysis, usesPeriodComparison, status },
       });
       await tx.sectionMetric.deleteMany({ where: { sectionId: id } });
       if (metrics.length > 0) {

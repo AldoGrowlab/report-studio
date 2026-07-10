@@ -4,12 +4,15 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { missingPhotoSections, groupBySection, formatValueID } from "@/lib/uploads-view";
 import { splitByNumbers } from "@/lib/insight-format";
+import { monthOptions, formatMonthID } from "@/lib/period";
 
 type SectionOption = {
   id: string;
   name: string;
   platform: "shopee" | "tiktok";
   narrativeOrder: number;
+  // Tahap 6b — section ini pakai perbandingan periode: foto ditandai bulan + satu utama.
+  usesPeriodComparison: boolean;
 };
 
 type ExtractionStatus = "ok" | "missing" | "low_confidence";
@@ -30,6 +33,9 @@ type SavedUpload = {
   sectionName: string;
   platform: string;
   imageSrc: string;
+  // Tahap 6b — hanya terisi untuk section ber-perbandingan-periode.
+  periodMonth: string | null;
+  isPrimaryPeriod: boolean;
   extractions: Extraction[];
 };
 
@@ -82,6 +88,9 @@ type PendingItem = {
   file: File;
   previewUrl: string;
   sectionId: string;
+  // Tahap 6b — dipakai hanya saat section terpilih ber-perbandingan-periode.
+  periodMonth: string;
+  isPrimaryPeriod: boolean;
   saving: boolean;
   error: string;
 };
@@ -115,6 +124,10 @@ export default function UploadManager({
   const sectionLabel = (s: SectionOption) =>
     multiPlatform ? `${s.platform === "shopee" ? "Shopee" : "TikTok"} — ${s.name}` : s.name;
   const sectionName = (id: string) => sections.find((s) => s.id === id)?.name ?? id;
+  const sectionUsesComparison = (id: string) =>
+    sections.find((s) => s.id === id)?.usesPeriodComparison ?? false;
+  // Dropdown penanda bulan (Tahap 6b): 13 bulan terakhir berjalan, dihitung sekali per mount.
+  const [monthOpts] = useState(() => monthOptions(new Date(), 13));
 
   function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
@@ -125,6 +138,8 @@ export default function UploadManager({
         file,
         previewUrl: URL.createObjectURL(file),
         sectionId: "",
+        periodMonth: "",
+        isPrimaryPeriod: false,
         saving: false,
         error: "",
       })),
@@ -149,11 +164,22 @@ export default function UploadManager({
       patchPending(item.localId, { error: "Pilih label section dulu." });
       return;
     }
+    const usesComparison = sectionUsesComparison(item.sectionId);
+    if (usesComparison && !item.periodMonth) {
+      patchPending(item.localId, {
+        error: "Section ini pakai perbandingan periode — pilih bulan foto ini dulu.",
+      });
+      return;
+    }
     patchPending(item.localId, { saving: true, error: "" });
 
     const fd = new FormData();
     fd.append("file", item.file);
     fd.append("sectionId", item.sectionId);
+    if (usesComparison) {
+      fd.append("periodMonth", item.periodMonth);
+      fd.append("isPrimaryPeriod", String(item.isPrimaryPeriod));
+    }
 
     try {
       const res = await fetch(`/api/reports/${reportId}/uploads`, { method: "POST", body: fd });
@@ -166,16 +192,23 @@ export default function UploadManager({
         patchPending(item.localId, { saving: false, error: data.error || "Gagal menyimpan." });
         return;
       }
-      // Pindah dari pending ke saved
+      // Pindah dari pending ke saved. Utama baru => utama lama section itu ikut ter-unset
+      // di server (transaksi) — cerminkan di state lokal juga.
       URL.revokeObjectURL(item.previewUrl);
       setSaved((prev) => [
-        ...prev,
+        ...prev.map((u) =>
+          data.upload.isPrimaryPeriod && u.sectionId === data.upload.sectionId
+            ? { ...u, isPrimaryPeriod: false }
+            : u
+        ),
         {
           id: data.upload.id,
           sectionId: data.upload.sectionId,
           sectionName: data.upload.section.name,
           platform: data.upload.platform,
           imageSrc: `/api/uploads/${data.upload.id}/image`,
+          periodMonth: data.upload.periodMonth ?? null,
+          isPrimaryPeriod: Boolean(data.upload.isPrimaryPeriod),
           extractions: [],
         },
       ]);
@@ -183,6 +216,43 @@ export default function UploadManager({
     } catch {
       patchPending(item.localId, { saving: false, error: "Kesalahan jaringan." });
     }
+  }
+
+  // Tahap 6b — ubah penanda periode foto tersimpan (ganti bulan / jadikan utama).
+  async function patchSavedPeriod(
+    u: SavedUpload,
+    patch: { periodMonth?: string; isPrimaryPeriod?: true }
+  ) {
+    const res = await fetch(`/api/uploads/${u.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (res.status === 403) {
+      router.push("/login");
+      return;
+    }
+    const data = await res.json();
+    if (!res.ok) {
+      window.alert(data.error || "Gagal mengubah penanda periode.");
+      return;
+    }
+    setSaved((prev) =>
+      prev.map((s) => {
+        if (s.id === u.id) {
+          return {
+            ...s,
+            periodMonth: data.upload.periodMonth ?? s.periodMonth,
+            isPrimaryPeriod: Boolean(data.upload.isPrimaryPeriod),
+          };
+        }
+        // Utama baru meng-unset utama lama section yang sama (cermin transaksi server).
+        if (patch.isPrimaryPeriod && s.sectionId === u.sectionId) {
+          return { ...s, isPrimaryPeriod: false };
+        }
+        return s;
+      })
+    );
   }
 
   async function deleteSaved(u: SavedUpload) {
@@ -581,6 +651,37 @@ export default function UploadManager({
                     </option>
                   ))}
                 </select>
+                {/* Tahap 6b — section ber-perbandingan: WAJIB pilih bulan foto ini +
+                    tandai EKSPLISIT bila ini periode utama (tidak pernah otomatis). */}
+                {item.sectionId && sectionUsesComparison(item.sectionId) && (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-3">
+                    <select
+                      value={item.periodMonth}
+                      onChange={(e) =>
+                        patchPending(item.localId, { periodMonth: e.target.value, error: "" })
+                      }
+                      className="rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                    >
+                      <option value="">— bulan foto ini —</option>
+                      {monthOpts.map((m) => (
+                        <option key={m.value} value={m.value}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                    <label className="flex items-center gap-1.5 text-xs text-neutral-300">
+                      <input
+                        type="checkbox"
+                        checked={item.isPrimaryPeriod}
+                        onChange={(e) =>
+                          patchPending(item.localId, { isPrimaryPeriod: e.target.checked })
+                        }
+                        className="accent-blue-500"
+                      />
+                      Periode utama
+                    </label>
+                  </div>
+                )}
                 {item.error && <p className="mt-1 text-xs text-red-400">{item.error}</p>}
                 <div className="mt-2 flex gap-2">
                   <button
@@ -693,6 +794,47 @@ export default function UploadManager({
                         </button>
                       </div>
                     </div>
+
+                    {/* Tahap 6b — penanda periode foto (hanya section ber-perbandingan):
+                        label bulan + badge Utama, ganti bulan & jadikan-utama via PATCH. */}
+                    {sectionUsesComparison(u.sectionId) && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                        <select
+                          value={u.periodMonth ?? ""}
+                          onChange={(e) =>
+                            e.target.value &&
+                            patchSavedPeriod(u, { periodMonth: e.target.value })
+                          }
+                          className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-xs text-neutral-200 outline-none focus:border-blue-500"
+                        >
+                          {!u.periodMonth && <option value="">— bulan? —</option>}
+                          {monthOpts.map((m) => (
+                            <option key={m.value} value={m.value}>
+                              {m.label}
+                            </option>
+                          ))}
+                          {/* Bulan lama di luar 13 opsi berjalan tetap tampil apa adanya */}
+                          {u.periodMonth &&
+                            !monthOpts.some((m) => m.value === u.periodMonth) && (
+                              <option value={u.periodMonth}>
+                                {formatMonthID(u.periodMonth)}
+                              </option>
+                            )}
+                        </select>
+                        {u.isPrimaryPeriod ? (
+                          <span className="rounded bg-blue-500/15 px-2 py-0.5 text-[10px] font-medium text-blue-300">
+                            Periode utama
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => patchSavedPeriod(u, { isPrimaryPeriod: true })}
+                            className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+                          >
+                            Jadikan utama
+                          </button>
+                        )}
+                      </div>
+                    )}
 
                     {extractError[u.id] && (
                       <p className="mt-1 text-xs text-red-400">{extractError[u.id]}</p>

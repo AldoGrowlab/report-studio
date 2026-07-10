@@ -3,9 +3,13 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { canAccessReport, MAX_UPLOAD_BYTES } from "@/lib/reports";
 import { getStorage, isAllowedImageType, buildImageKey } from "@/lib/storage";
+import { isValidPeriodMonth } from "@/lib/period";
 
 // POST — upload satu screenshot + label section (satu foto satu label).
-// Body: multipart/form-data { file, sectionId }
+// Body: multipart/form-data { file, sectionId, periodMonth?, isPrimaryPeriod? }
+// periodMonth ("YYYY-MM") WAJIB untuk section ber-perbandingan-periode (Tahap 6b);
+// untuk section biasa diabaikan (null/false). isPrimaryPeriod: maks SATU per
+// (report, section) — menandai utama baru meng-unset yang lama (transaksi).
 export async function POST(request: Request, ctx: RouteContext<"/api/reports/[id]/uploads">) {
   const session = await getSession();
   if (!session) {
@@ -66,21 +70,47 @@ export async function POST(request: Request, ctx: RouteContext<"/api/reports/[id
     );
   }
 
+  // Tahap 6b — penanda periode, HANYA berlaku untuk section ber-perbandingan.
+  let periodMonth: string | null = null;
+  let isPrimaryPeriod = false;
+  if (section.usesPeriodComparison) {
+    const rawMonth = form.get("periodMonth");
+    if (typeof rawMonth !== "string" || !isValidPeriodMonth(rawMonth)) {
+      return NextResponse.json(
+        { error: "Section ini pakai perbandingan periode — pilih bulan untuk foto ini." },
+        { status: 400 }
+      );
+    }
+    periodMonth = rawMonth;
+    isPrimaryPeriod = form.get("isPrimaryPeriod") === "true";
+  }
+
   // Simpan file ke storage (R2 atau disk lokal), lalu catat ke tabel Upload.
   const key = buildImageKey(reportId, file.type);
   const bytes = new Uint8Array(await file.arrayBuffer());
   await getStorage().put(key, bytes, file.type);
 
-  const upload = await prisma.upload.create({
-    data: {
-      reportId,
-      reportPeriod: report.reportPeriod,
-      platform: section.platform,
-      sectionId: section.id,
-      imageUrl: key,
-      labelConfirmed: true,
-    },
-    include: { section: { select: { id: true, name: true } } },
+  const upload = await prisma.$transaction(async (tx) => {
+    if (isPrimaryPeriod) {
+      // Satu utama per (report, section): utama baru meng-unset yang lama.
+      await tx.upload.updateMany({
+        where: { reportId, sectionId: section.id, isPrimaryPeriod: true },
+        data: { isPrimaryPeriod: false },
+      });
+    }
+    return tx.upload.create({
+      data: {
+        reportId,
+        reportPeriod: report.reportPeriod,
+        platform: section.platform,
+        sectionId: section.id,
+        imageUrl: key,
+        labelConfirmed: true,
+        periodMonth,
+        isPrimaryPeriod,
+      },
+      include: { section: { select: { id: true, name: true } } },
+    });
   });
 
   return NextResponse.json({ upload }, { status: 201 });

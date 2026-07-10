@@ -37,7 +37,8 @@ export async function POST(request: Request) {
   if (!parsed.ok) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
-  const { platform, name, narrativeOrder, kbAnalysis, metrics } = parsed.data;
+  const { platform, name, narrativeOrder, kbAnalysis, usesPeriodComparison, metrics } =
+    parsed.data;
 
   const status = computeSectionStatus({
     name,
@@ -52,6 +53,7 @@ export async function POST(request: Request) {
         name,
         narrativeOrder,
         kbAnalysis,
+        usesPeriodComparison,
         status,
         metrics: { create: metrics },
       },

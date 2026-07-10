@@ -102,7 +102,13 @@ export default async function ReportDetailPage({
   const sections = await prisma.section.findMany({
     where: { status: "active", platform: { in: report.platforms } },
     orderBy: [{ platform: "asc" }, { narrativeOrder: "asc" }, { name: "asc" }],
-    select: { id: true, name: true, platform: true, narrativeOrder: true },
+    select: {
+      id: true,
+      name: true,
+      platform: true,
+      narrativeOrder: true,
+      usesPeriodComparison: true,
+    },
   });
 
   const initialUploads = report.uploads.map((u) => ({
@@ -111,6 +117,8 @@ export default async function ReportDetailPage({
     sectionName: u.section.name,
     platform: u.platform,
     imageSrc: `/api/uploads/${u.id}/image`,
+    periodMonth: u.periodMonth,
+    isPrimaryPeriod: u.isPrimaryPeriod,
     extractions: u.extractions.map((e) => ({
       id: e.id,
       key: e.key,

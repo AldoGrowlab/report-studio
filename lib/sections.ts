@@ -14,6 +14,8 @@ export type SectionInput = {
   name: string;
   narrativeOrder: number;
   kbAnalysis: string;
+  // Tahap 6b — section ini pakai perbandingan periode (opt-in founder).
+  usesPeriodComparison: boolean;
   metrics: MetricInput[];
 };
 
@@ -107,7 +109,17 @@ export function parseSectionBody(body: unknown): ParseResult {
     });
   }
 
-  return { ok: true, data: { platform, name, narrativeOrder, kbAnalysis, metrics } };
+  return {
+    ok: true,
+    data: {
+      platform,
+      name,
+      narrativeOrder,
+      kbAnalysis,
+      usesPeriodComparison: Boolean(b.usesPeriodComparison),
+      metrics,
+    },
+  };
 }
 
 export { PLATFORMS, METRIC_TYPES };

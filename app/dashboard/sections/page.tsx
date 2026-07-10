@@ -20,6 +20,7 @@ type SectionRow = {
   narrativeOrder: number;
   status: "draft" | "active";
   kbAnalysis: string;
+  usesPeriodComparison: boolean;
   metrics: MetricRow[];
 };
 
@@ -45,6 +46,8 @@ export default function SectionsPage() {
   const [name, setName] = useState("");
   const [narrativeOrder, setNarrativeOrder] = useState("0");
   const [kbAnalysis, setKbAnalysis] = useState("");
+  // Tahap 6b — section membandingkan performa antar bulan (penanda bulan per-foto saat upload).
+  const [usesPeriodComparison, setUsesPeriodComparison] = useState(false);
   const [metrics, setMetrics] = useState<MetricRow[]>([emptyMetric()]);
 
   const [error, setError] = useState("");
@@ -90,6 +93,7 @@ export default function SectionsPage() {
     setName("");
     setNarrativeOrder("0");
     setKbAnalysis("");
+    setUsesPeriodComparison(false);
     setMetrics([emptyMetric()]);
     setError("");
     setSuccess("");
@@ -101,6 +105,7 @@ export default function SectionsPage() {
     setName(s.name);
     setNarrativeOrder(String(s.narrativeOrder));
     setKbAnalysis(s.kbAnalysis);
+    setUsesPeriodComparison(s.usesPeriodComparison);
     setMetrics(s.metrics.length ? s.metrics.map((m) => ({ ...m })) : [emptyMetric()]);
     setError("");
     setSuccess("");
@@ -129,6 +134,7 @@ export default function SectionsPage() {
       name,
       narrativeOrder,
       kbAnalysis,
+      usesPeriodComparison,
       metrics: filledMetrics,
     };
 
@@ -260,6 +266,28 @@ export default function SectionsPage() {
                 placeholder="Panduan analisis / narasi untuk section ini…"
               />
             </div>
+            <div className="sm:col-span-2">
+              {/* Tahap 6b — opt-in perbandingan periode: foto section ini ditandai bulan
+                  per-foto saat upload + satu periode utama (lihat DESIGN §Perbandingan Periode). */}
+              <label className="flex items-start gap-2.5 rounded-lg border border-neutral-800 bg-neutral-950 p-3">
+                <input
+                  type="checkbox"
+                  checked={usesPeriodComparison}
+                  onChange={(e) => setUsesPeriodComparison(e.target.checked)}
+                  className="mt-0.5 accent-blue-500"
+                />
+                <span>
+                  <span className="block text-sm text-neutral-200">
+                    Section ini pakai perbandingan periode
+                  </span>
+                  <span className="mt-0.5 block text-xs text-neutral-500">
+                    Saat upload, tiap foto section ini ditandai bulan + tahun, dan satu foto
+                    ditandai sebagai periode utama. Sistem menghitung perubahan antar bulan
+                    (persen) untuk dinarasikan Analyst.
+                  </span>
+                </span>
+              </label>
+            </div>
           </div>
 
           {/* Editor metrik */}
@@ -380,6 +408,11 @@ export default function SectionsPage() {
                         >
                           {s.status === "active" ? "Aktif" : "Draft"}
                         </span>
+                        {s.usesPeriodComparison && (
+                          <span className="rounded bg-blue-500/15 px-2 py-0.5 text-xs font-medium text-blue-300">
+                            Perbandingan periode
+                          </span>
+                        )}
                       </div>
                       <h3 className="mt-1.5 truncate text-sm font-medium text-neutral-100">
                         {s.name}

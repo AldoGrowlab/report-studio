@@ -78,8 +78,9 @@ Data Extractor → Analyst → Narrative Validator → Template Engine
 - **Analyst** — satu agent, KB di-swap per section yang dikerjakan. Tidak menghitung ulang
   angka; menarik dari Extraction dan merangkai insight + caption sesuai framework section.
   Jika satu section punya >1 sumber foto: narasikan tiap sumber terpisah, JANGAN gabung/jumlah.
-  Untuk section berperbandingan-periode: pakai penanda bulan per-foto untuk menghitung perubahan
-  dalam PERSEN saja (mis. "GMV Juni +15% vs Mei"), bulan sebagai konteks (lihat §Perbandingan Periode).
+  Untuk section berperbandingan-periode: menarasikan perubahan PERSEN antar bulan yang sudah
+  dihitung KODE dari Extraction (mis. "GMV Juni +15% vs Mei"), bulan sebagai konteks — Analyst
+  tidak menghitung (lihat §Perbandingan Periode).
 - **Narrative Validator** — satu-satunya lapisan yang melihat semua section satu platform.
   Berperan GANDA (lihat §Validator & Kesimpulan): (1) cek konsistensi — wewenang: beri
   instruksi koreksi (bukan tulis ulang), loop revisi MAKS 1x; gagal → escalate + flag,
@@ -131,14 +132,20 @@ bukan disetel manual. — SUDAH DIIMPLEMENTASI.
   angka dari report sebelumnya. Tiap report berdiri sendiri.
 - **Extractor tetap sama.** Tiap foto dibaca seperti biasa — sumber terpisah, TIDAK digabung/
   dijumlah (konsisten dengan aturan ">1 foto = sumber terpisah").
-- **Analyst memakai penanda bulan** untuk menghitung & menarasikan perubahan dalam PERSEN saja
-  (mis. "GMV Juni +15% vs Mei"), dengan bulan sebagai konteks — bukan menyalin angka absolut antar
-  periode sebagai klaim baru.
+- **Persen dihitung DETERMINISTIK DI KODE** dari Extraction (revisi Jul 2026 — semula
+  "Analyst menghitung"; diubah konsisten Prinsip #1 & pola normalisasi notasi: LLM tidak
+  menghitung). Analyst hanya MENARASIKAN perubahan yang sudah dihitung (mis. "GMV Juni
+  +15% vs Mei"), bulan sebagai konteks — bukan menyalin angka absolut antar periode
+  sebagai klaim baru. Detail pola berantai & aturan lewati = Tahap 6b-B.
 - **Dua lapis periode yang tidak bertabrakan:** `Report.reportPeriod` (periode report keseluruhan)
   vs penanda bulan per-foto (di `Upload`). Beda peran, tidak saling menggantikan.
 
-> CATATAN IMPLEMENTASI: butuh field baru — flag perbandingan-periode di `Section` dan penanda bulan
-> di `Upload`. Belum dibangun; relevan mulai saat Analyst (Tahap 6+).
+> IMPLEMENTASI (Tahap 6b-A, Jul 2026): `Section.usesPeriodComparison` (toggle founder di
+> halaman Section & KB); `Upload.periodMonth` kanonik "YYYY-MM" (label "Juni 2026" hanya di
+> render — `lib/period.ts`, dropdown 13 bulan terakhir berjalan) + `Upload.isPrimaryPeriod`.
+> Periode UTAMA ditandai EKSPLISIT user (tidak pernah otomatis), maks SATU per
+> (report, section) — ditegakkan server (menandai utama baru meng-unset yang lama).
+> Perhitungan persen + narasi Analyst = Tahap 6b-B (menyusul).
 
 ## Validator & Kesimpulan (keputusan Jul 2026)
 
@@ -281,8 +288,14 @@ fotonya belum ada.
   insight menyebut kekurangan dalam teks, baris `Flag` belum ditulis. Revisi Jul 2026:
   output jadi poin-poin (target 6, atap keras 8) + snapshot kosakata angka untuk bold
   deterministik di renderer (lihat baris LLM Analyst di §Stack).
-- [ ] Tahap 6b — Analyst lanjutan: caption + perbandingan periode (flag per-section, penanda
-  bulan per-foto, perubahan PERSEN saja — lihat §Perbandingan Periode)
+- [x] Tahap 6b-A — Perbandingan periode, data model + UI upload: toggle
+  `usesPeriodComparison` per section (founder), penanda bulan per-foto ("YYYY-MM",
+  dropdown 13 bulan) + periode utama eksplisit satu-per-(report, section). Lihat
+  §Perbandingan Periode.
+- [ ] Tahap 6b-B — Perbandingan periode, perhitungan + narasi: persen berantai antar bulan
+  berdekatan dihitung DETERMINISTIK DI KODE dari Extraction (bukan LLM), Analyst hanya
+  menarasikan (lihat §Perbandingan Periode). Caption per-foto: bagian lama Tahap 6b,
+  masih ditunda (backlog).
 - [x] Tahap 7a — Validator, peran kesimpulan: baca SEMUA insight section satu platform →
   tulis poin kesimpulan platform itu (manual per platform dari halaman report; tabel
   `Conclusion` + `ValidatorKb`; angka verbatim dari insight, tanpa aritmetika/rekonsiliasi;
