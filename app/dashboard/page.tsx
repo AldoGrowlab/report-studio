@@ -14,7 +14,7 @@ export default async function DashboardPage() {
   const founderMenu = [
     { label: "Section & KB", href: "/dashboard/sections" },
     { label: "KB Validator", href: "/dashboard/validator-kb" },
-    { label: "Tema bulanan", href: null },
+    { label: "Tema bulanan", href: "/dashboard/theme" },
     { label: "Dashboard flag", href: "/dashboard/flags" },
     { label: "Generate report", href: "/dashboard/reports" },
     { label: "Kelola user", href: "/dashboard/users" },

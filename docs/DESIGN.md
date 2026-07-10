@@ -269,7 +269,23 @@ fotonya belum ada.
 - Template Engine: `pptxgenjs` v4 (JS murni — tanpa runtime Python di deploy Railway). Builder
   deterministik `lib/ppt.ts` (data polos → Buffer, tanpa Prisma/AI); dimensi foto dibaca dari
   header bytes sendiri (`lib/image-size.ts`) supaya proporsi "contain" dihitung di kode, bukan
-  perilaku library. Tema netral di konstanta `THEME` — diganti config saat Tahap 10.
+  perilaku library.
+- Tema (Tahap 10, "Cara B"): SATU tema aktif GLOBAL di tabel `Theme` (record tunggal), diubah
+  founder via `/dashboard/theme`, dipakai SEMUA report saat generate — termasuk report lama
+  (disengaja: PPT dirakit on-the-fly dengan tema aktif; tema TIDAK disimpan per-report).
+  Konfigurasi: warna primer/sekunder/aksen (hex tanpa `#`), font judul+body dari DAFTAR AMAN
+  PPTX (`SAFE_FONTS`, `lib/theme.ts` — tersedia di Office Windows & Mac tanpa embed), logo
+  cover (upload via `lib/storage.ts`, opsional — tanpa logo tetap jalan), override aksen per
+  platform (OFF → aksen dasar). `lib/ppt.ts` tetap murni: tema masuk sebagai parameter
+  (`PptTheme`), route pptx yang membaca DB; belum ada baris Theme → default netral.
+- Polesan estetik PPT "Tingkat 2" (Tahap 10, deterministik tanpa AI — pola tetap): cover
+  asimetris (panel primer ±38% kiri + garis aksen + logo + hierarki kicker/judul/periode);
+  slide section ber-header (bar aksen + judul heading-font + garis pemisah), panel insight
+  latar halus (tint aksen ~93% putih, garis aksen kiri), footer (label report + nomor
+  halaman "n / total" dihitung manual); slide Kesimpulan ber-band primer lebar penuh (judul
+  putih) supaya terasa penutup. Teks body tetap abu gelap netral (keterbacaan); foto asli
+  TIDAK pernah ditimpa elemen; bold angka & geometri "contain" tak berubah. Desain artistik
+  selevel template/Canva = peningkatan terpisah nanti, BUKAN bagian tahap ini.
 - LLM Analyst: model sama dengan Extractor (`claude-opus-4-8`), structured output + adaptive
   thinking. Abstraksi di `lib/analyst.ts` (fallback stub dev, pola sama). Penyingkatan angka
   (Prinsip #6) dihitung DETERMINISTIK di kode — model hanya menerima & wajib mengutip bentuk
@@ -342,7 +358,10 @@ fotonya belum ada.
   dua-blok TETAP TERTUNDA (lihat catatan §Platform).
 - [x] Tahap 9 — Dashboard flag (founder): `/dashboard/flags` read-only, kelompok per
   (platform, section) + frekuensi lintas report — alat perbaikan KB (lihat §Sistem Flag)
-- [ ] Tahap 10 — Tema bulanan (config)
+- [x] Tahap 10 — Tema bulanan (config global "Cara B" + polesan estetik Tingkat 2):
+  tabel `Theme` tunggal + `/dashboard/theme` (warna, font aman, logo, override aksen per
+  platform) + cover/header/panel/footer/band kesimpulan bertema di `lib/ppt.ts` (lihat
+  baris Tema & Polesan di §Stack)
 - [ ] Tahap 11 — Deploy ke Railway
 
 **Backlog (disengaja ditunda, keputusan audit Jul 2026):**

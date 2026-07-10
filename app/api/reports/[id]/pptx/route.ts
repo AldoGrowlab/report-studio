@@ -4,7 +4,13 @@ import { getSession } from "@/lib/session";
 import { canAccessReport } from "@/lib/reports";
 import { getStorage } from "@/lib/storage";
 import { groupBySection } from "@/lib/uploads-view";
-import { buildReportPptx, type PptBlock, type PptPhoto } from "@/lib/ppt";
+import {
+  buildReportPptx,
+  DEFAULT_PPT_THEME,
+  type PptBlock,
+  type PptPhoto,
+  type PptTheme,
+} from "@/lib/ppt";
 
 // GET — unduh report sebagai .pptx (Tahap 8, Template Engine DETERMINISTIK — tanpa AI).
 // GET supaya browser mengunduh langsung (cookie session ikut). Founder & operator.
@@ -95,7 +101,36 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/reports/[id
     blocks.push({ platform, sections, conclusion });
   }
 
-  const buffer = await buildReportPptx({ reportPeriod: report.reportPeriod, blocks });
+  // Tema global aktif (Tahap 10): baris Theme pertama; belum ada -> default netral.
+  // Logo dibaca dari storage — file hilang cukup dilewati, PPT tetap jadi (tanpa error).
+  const themeRow = await prisma.theme.findFirst({ orderBy: { updatedAt: "asc" } });
+  let theme: PptTheme = DEFAULT_PPT_THEME;
+  if (themeRow) {
+    let logo: PptTheme["logo"] = null;
+    if (themeRow.logoKey) {
+      const image = await storage.read(themeRow.logoKey);
+      if (image) {
+        logo = {
+          data: `${image.contentType};base64,${Buffer.from(image.bytes).toString("base64")}`,
+          bytes: image.bytes,
+          contentType: image.contentType,
+        };
+      }
+    }
+    theme = {
+      primary: themeRow.primaryColor,
+      secondary: themeRow.secondaryColor,
+      accent: themeRow.accentColor,
+      accentOverride: themeRow.accentOverride,
+      accentShopee: themeRow.accentShopee,
+      accentTiktok: themeRow.accentTiktok,
+      headingFont: themeRow.headingFont,
+      bodyFont: themeRow.bodyFont,
+      logo,
+    };
+  }
+
+  const buffer = await buildReportPptx({ reportPeriod: report.reportPeriod, blocks }, theme);
 
   // Nama file: fallback ASCII + filename* UTF-8 (periode bisa mengandung karakter non-ASCII).
   const baseName = `Laporan Performa ${report.reportPeriod}.pptx`;

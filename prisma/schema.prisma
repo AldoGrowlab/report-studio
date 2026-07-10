@@ -222,6 +222,24 @@ model ValidatorKb {
   updatedAt    DateTime @updatedAt
 }
 
+// Tahap 10 — tema global (Cara B): SATU tema aktif (baris pertama), diubah founder via
+// /dashboard/theme, dipakai SEMUA report saat generate PPT (termasuk report lama —
+// disengaja: PPT dirakit on-the-fly dengan tema aktif). Warna = hex 6 digit TANPA "#"
+// (format pptxgenjs). Belum ada baris → default netral dipakai (tanpa error).
+model Theme {
+  id             String   @id @default(cuid())
+  primaryColor   String   @default("1F2937") // warna utama brand: panel cover, band kesimpulan, judul
+  secondaryColor String   @default("6B7280") // pendukung: kicker, caption, footer, garis pemisah
+  accentColor    String   @default("2563EB") // aksen dasar: bar judul, garis, panel insight
+  headingFont    String   @default("Calibri")
+  bodyFont       String   @default("Calibri")
+  logoKey        String? // key storage (lib/storage.ts); null = tanpa logo
+  accentOverride Boolean  @default(false) // ON -> aksen per platform dipakai, bukan aksen dasar
+  accentShopee   String   @default("EE4D2D")
+  accentTiktok   String   @default("111827")
+  updatedAt      DateTime @updatedAt
+}
+
 enum FlagSeverity {
   info
   tinggi
