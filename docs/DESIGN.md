@@ -242,6 +242,11 @@ fotonya belum ada.
 - Flag harus visible di ringkasan akhir (bukan terkubur di log).
 - Akumulasi flag = alat perbaikan KB. Sering ke-flag lintas report → KB perlu dipertajam.
   Tiap insight bawa `kb_version` untuk pelacakan.
+- IMPLEMENTASI (Tahap 9, Jul 2026): dashboard founder `/dashboard/flags` (READ-ONLY, tanpa
+  aksi) — SEMUA jenis flag di tabel `Flag`, dikelompokkan per (platform, section) dengan
+  frekuensi lintas report (`lib/flags-view.ts`, urut paling-sering dulu) + hitungan report
+  unik + penanda severity `tinggi`; tiap flag menaut ke report asalnya. Kelompok berulang
+  (≥2) diberi petunjuk "pertimbangkan pertajam KB section ini".
 
 ## Stack & Keputusan Teknis
 
@@ -335,7 +340,8 @@ fotonya belum ada.
   di `THEME` (`lib/ppt.ts`) — Tahap 10 tinggal mengganti. Caption per-foto (hasil Analyst 6b)
   belum ada — slot menyusul bersama 6b. Penggabungan DUA report (Shopee+TikTok) jadi satu PPT
   dua-blok TETAP TERTUNDA (lihat catatan §Platform).
-- [ ] Tahap 9 — Dashboard flag (founder)
+- [x] Tahap 9 — Dashboard flag (founder): `/dashboard/flags` read-only, kelompok per
+  (platform, section) + frekuensi lintas report — alat perbaikan KB (lihat §Sistem Flag)
 - [ ] Tahap 10 — Tema bulanan (config)
 - [ ] Tahap 11 — Deploy ke Railway
 
