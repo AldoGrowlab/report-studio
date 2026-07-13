@@ -63,6 +63,12 @@ export default async function ReportDetailPage({
     updatedAt: c.updatedAt.toISOString(),
   }));
 
+  // Rekomendasi & Action Plan tersimpan (Fase A) — ketikan user manual per platform.
+  const recommendations = await prisma.recommendation.findMany({
+    where: { reportId: id },
+    select: { platform: true, content: true },
+  });
+
   // Tahap 7b — jejak revisi Validator (before/after/alasan, per insight) + flag
   // inkonsistensi hasil escalate: WAJIB terlihat di halaman report, bukan terkubur di log.
   const revisions = await prisma.insightRevision.findMany({
@@ -162,6 +168,7 @@ export default async function ReportDetailPage({
           initialUploads={initialUploads}
           initialInsights={initialInsights}
           initialConclusions={initialConclusions}
+          initialRecommendations={recommendations}
           initialRevisions={initialRevisions}
           initialFlags={initialFlags}
         />

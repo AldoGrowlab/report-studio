@@ -270,6 +270,15 @@ fotonya belum ada.
   deterministik `lib/ppt.ts` (data polos → Buffer, tanpa Prisma/AI); dimensi foto dibaca dari
   header bytes sendiri (`lib/image-size.ts`) supaya proporsi "contain" dihitung di kode, bukan
   perilaku library.
+- Struktur PPT gaya agency (Fase A, Jul 2026): **cover report (1x) → per platform: [pembatas
+  ("SHOPEE REPORT"/"TIKTOK SHOP REPORT", latar primer, styling saja) → slide section →
+  Kesimpulan → Rekomendasi*] → Thank You (1x)**. (*Slide "Rekomendasi & Action Plan" per
+  platform: DIKETIK USER MANUAL (tabel `Recommendation`, unik per (report, platform), textarea
+  di halaman report) — teks bebas apa adanya, baris baru dipertahankan, TANPA AI/bold otomatis;
+  kosong = slide dilewati, bukan slide kosong.) Slide Thank You: teks + logo tema + kontak dari
+  `Theme` (`contactEmail`/`contactWebsite`/`contactInstagram`, editable founder di
+  `/dashboard/theme`; kosong = bagian itu tak tampil). Nama platform pindah dari cover ke
+  pembatas; cover menampilkan periode + daftar platform.
 - Tema (Tahap 10, "Cara B"): SATU tema aktif GLOBAL di tabel `Theme` (record tunggal), diubah
   founder via `/dashboard/theme`, dipakai SEMUA report saat generate — termasuk report lama
   (disengaja: PPT dirakit on-the-fly dengan tema aktif; tema TIDAK disimpan per-report).
@@ -362,6 +371,34 @@ fotonya belum ada.
   tabel `Theme` tunggal + `/dashboard/theme` (warna, font aman, logo, override aksen per
   platform) + cover/header/panel/footer/band kesimpulan bertema di `lib/ppt.ts` (lihat
   baris Tema & Polesan di §Stack)
+- [x] Gaya agency Fase A (Jul 2026) — jenis slide baru: pembatas platform, Rekomendasi &
+  Action Plan manual (tabel `Recommendation` + textarea per platform di halaman report),
+  Thank You + kontak tema; cover jadi level-report. Lihat baris "Struktur PPT gaya agency"
+  di §Stack.
+- [x] Gaya agency Fase B (Jul 2026) — gaya visual default: primer default HITAM `111111`
+  (migrasi memindah baris Theme existing hanya bila masih default lama; user tetap bebas
+  ganti di `/dashboard/theme`); cover = logo atas + band primer "MONTHLY REPORT" + periode;
+  judul section TEBAL BESAR UPPERCASE (bar aksen tetap); Kesimpulan/Rekomendasi = latar
+  primer penuh + KARTU putih berisi poin (teks tetap gelap di dalam kartu, bold angka tak
+  berubah); pembatas & Thank You senada (latar primer). Penyesuaian: slide SECTION ikut
+  GELAP (latar primer; judul terang; foto dalam kartu putih membulat — foto tak pernah
+  ditimpa, kartu di belakang; caption "Sumber #n" abu di dalam kartu; insight = panel
+  primer-diterangkan-tipis + teks terang, bold angka tetap). Kontras SELALU dijaga
+  `isDarkColor` (luminans, `lib/theme.ts`): tema berprimer TERANG otomatis memakai teks
+  gelap/sekunder di semua slide berlatar primer — tak pernah putih-di-terang. Semua warna
+  tetap dari tema — gaya agency hanya DEFAULT + struktur layout, bukan hardcode.
+- [x] Gaya agency Fase C (Jul 2026) — sub-poin bertingkat SATU tingkat pada insight &
+  kesimpulan, Analyst/Validator yang memutuskan kapan perlu (tidak diatur user).
+  Penyimpanan: tetap `String[]` — sub-poin = elemen ber-PREFIX TAB (`\t`), kompatibel
+  mundur (poin lama datar tetap sah; berlaku juga `InsightRevision.points*`); helper
+  `parsePointLine`/`flattenPoints` di `lib/insight-format.ts`; `splitByNumbers` per baris
+  tak berubah (bold tetap). Structured output ketiga jalur LLM (generate + revisi +
+  kesimpulan) = `{points: [{text, sub[]}]}` via `POINTS_SCHEMA`/`pointsOutputRule`/
+  `parseStructuredPoints` bersama di `lib/analyst.ts`. Atap dihitung atas TOTAL BARIS
+  (poin + sub): target 6 lunak, atap keras 8 — dipotong pada array rata (sub selalu
+  setelah induknya, tak pernah ada sub yatim). Render: PPT `indentLevel:1` + bullet
+  sekunder (en dash) + huruf sedikit kecil; web = komponen `BoldPoints` bersama
+  (insight, kesimpulan, before/after revisi).
 - [ ] Tahap 11 — Deploy ke Railway
 
 **Backlog (disengaja ditunda, keputusan audit Jul 2026):**

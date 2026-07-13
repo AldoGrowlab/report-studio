@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { missingPhotoSections, groupBySection, formatValueID } from "@/lib/uploads-view";
-import { splitByNumbers } from "@/lib/insight-format";
+import { parsePointLine, splitByNumbers } from "@/lib/insight-format";
 import { monthOptions, formatMonthID } from "@/lib/period";
 
 type SectionOption = {
@@ -61,6 +61,13 @@ type PlatformConclusion = {
   updatedAt: string;
 };
 
+// "Rekomendasi & Action Plan" per platform (Fase A gaya agency) — DIKETIK USER MANUAL,
+// bukan AI. Teks bebas apa adanya; kosong = slide rekomendasi dilewati saat generate PPT.
+type PlatformRecommendation = {
+  platform: "shopee" | "tiktok";
+  content: string;
+};
+
 // Jejak revisi Validator (Tahap 7b): before/after/alasan — tidak ada perubahan diam-diam.
 // resolved=false = cek ulang masih menemukan masalah (ter-escalate, ada flag).
 type InsightRevisionView = {
@@ -95,6 +102,61 @@ type PendingItem = {
   error: string;
 };
 
+// Daftar poin dengan sub-poin SATU tingkat (Fase C — prefix tab di storage) + bold angka
+// deterministik. Dipakai panel insight, kesimpulan, dan before/after revisi agar seragam
+// dengan renderer PPT (parsePointLine + splitByNumbers yang sama).
+function BoldPoints({
+  points,
+  numbers,
+  small = false,
+}: {
+  points: string[];
+  numbers: string[];
+  small?: boolean;
+}) {
+  return (
+    <ul
+      className={
+        small
+          ? "mt-1 space-y-1 text-xs text-neutral-300"
+          : "mt-2 space-y-1.5 text-sm text-neutral-200"
+      }
+    >
+      {points.map((line, pi) => {
+        const { depth, text } = parsePointLine(line);
+        return (
+          <li
+            key={pi}
+            className={`flex ${small ? "gap-1.5" : "gap-2"} ${
+              depth === 1 ? (small ? "pl-4" : "pl-6") : ""
+            }`}
+          >
+            <span className={small ? "text-neutral-600" : "text-neutral-500"}>
+              {depth === 1 ? "–" : "•"}
+            </span>
+            <span>
+              {splitByNumbers(text, numbers).map((seg, si) =>
+                seg.bold ? (
+                  <strong
+                    key={si}
+                    className={
+                      small ? "font-semibold text-neutral-100" : "font-semibold text-white"
+                    }
+                  >
+                    {seg.text}
+                  </strong>
+                ) : (
+                  <span key={si}>{seg.text}</span>
+                )
+              )}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 let localCounter = 0;
 
 export default function UploadManager({
@@ -104,6 +166,7 @@ export default function UploadManager({
   initialUploads,
   initialInsights,
   initialConclusions,
+  initialRecommendations,
   initialRevisions,
   initialFlags,
 }: {
@@ -113,6 +176,7 @@ export default function UploadManager({
   initialUploads: SavedUpload[];
   initialInsights: SectionInsight[];
   initialConclusions: PlatformConclusion[];
+  initialRecommendations: PlatformRecommendation[];
   initialRevisions: InsightRevisionView[];
   initialFlags: FlagView[];
 }) {
@@ -436,6 +500,46 @@ export default function UploadManager({
       setInsightError((p) => ({ ...p, [sectionId]: "Kesalahan jaringan." }));
     } finally {
       setInsightLoading((p) => ({ ...p, [sectionId]: false }));
+    }
+  }
+
+  // --- Rekomendasi & Action Plan per platform (Fase A) ---
+  // Murni ketikan user (tanpa AI); disimpan via PUT, kosong = dihapus (slide dilewati).
+  const [recoDraft, setRecoDraft] = useState<Record<string, string>>(() =>
+    Object.fromEntries(initialRecommendations.map((r) => [r.platform, r.content]))
+  );
+  const [recoSaving, setRecoSaving] = useState<Record<string, boolean>>({});
+  const [recoMessage, setRecoMessage] = useState<Record<string, string>>({});
+
+  async function saveRecommendation(platform: "shopee" | "tiktok") {
+    setRecoSaving((p) => ({ ...p, [platform]: true }));
+    setRecoMessage((p) => ({ ...p, [platform]: "" }));
+    try {
+      const res = await fetch(`/api/reports/${reportId}/recommendation`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platform, content: recoDraft[platform] ?? "" }),
+      });
+      if (res.status === 403) {
+        router.push("/login");
+        return;
+      }
+      const data = await res.json();
+      if (!res.ok) {
+        setRecoMessage((p) => ({ ...p, [platform]: data.error || "Gagal menyimpan." }));
+        return;
+      }
+      setRecoDraft((p) => ({ ...p, [platform]: data.recommendation?.content ?? "" }));
+      setRecoMessage((p) => ({
+        ...p,
+        [platform]: data.recommendation
+          ? "Tersimpan — tampil sebagai slide Rekomendasi di PPT."
+          : "Kosong — slide Rekomendasi dilewati saat generate PPT.",
+      }));
+    } catch {
+      setRecoMessage((p) => ({ ...p, [platform]: "Kesalahan jaringan." }));
+    } finally {
+      setRecoSaving((p) => ({ ...p, [platform]: false }));
     }
   }
 
@@ -1008,26 +1112,7 @@ export default function UploadManager({
                         )}
                         {insight ? (
                           <>
-                            <ul className="mt-2 space-y-1.5 text-sm text-neutral-200">
-                              {insight.points.map((point, pi) => (
-                                <li key={pi} className="flex gap-2">
-                                  <span className="text-neutral-500">•</span>
-                                  <span>
-                                    {/* Bold angka metrik: splitter deterministik yang sama
-                                        dengan renderer PPT (lib/insight-format.ts). */}
-                                    {splitByNumbers(point, insight.numbers).map((seg, si) =>
-                                      seg.bold ? (
-                                        <strong key={si} className="font-semibold text-white">
-                                          {seg.text}
-                                        </strong>
-                                      ) : (
-                                        <span key={si}>{seg.text}</span>
-                                      )
-                                    )}
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
+                            <BoldPoints points={insight.points} numbers={insight.numbers} />
                             <p className="mt-2 text-[10px] text-neutral-500">
                               KB v{insight.kbVersion}
                               {insight.generator === "stub" && " · stub dev"} ·{" "}
@@ -1041,28 +1126,7 @@ export default function UploadManager({
                               .filter((r) => r.sectionId === g.sectionId)
                               .map((rev) => {
                                 const renderPoints = (points: string[]) => (
-                                  <ul className="mt-1 space-y-1 text-xs text-neutral-300">
-                                    {points.map((point, pi) => (
-                                      <li key={pi} className="flex gap-1.5">
-                                        <span className="text-neutral-600">•</span>
-                                        <span>
-                                          {splitByNumbers(point, insight.numbers).map(
-                                            (seg, si) =>
-                                              seg.bold ? (
-                                                <strong
-                                                  key={si}
-                                                  className="font-semibold text-neutral-100"
-                                                >
-                                                  {seg.text}
-                                                </strong>
-                                              ) : (
-                                                <span key={si}>{seg.text}</span>
-                                              )
-                                          )}
-                                        </span>
-                                      </li>
-                                    ))}
-                                  </ul>
+                                  <BoldPoints points={points} numbers={insight.numbers} small />
                                 );
                                 return (
                                   <div
@@ -1174,26 +1238,7 @@ export default function UploadManager({
                 )}
                 {conclusion ? (
                   <>
-                    <ul className="mt-2 space-y-1.5 text-sm text-neutral-200">
-                      {conclusion.points.map((point, pi) => (
-                        <li key={pi} className="flex gap-2">
-                          <span className="text-neutral-500">•</span>
-                          <span>
-                            {/* Bold angka metrik: splitter deterministik yang sama
-                                dengan panel insight & renderer PPT. */}
-                            {splitByNumbers(point, conclusion.numbers).map((seg, si) =>
-                              seg.bold ? (
-                                <strong key={si} className="font-semibold text-white">
-                                  {seg.text}
-                                </strong>
-                              ) : (
-                                <span key={si}>{seg.text}</span>
-                              )
-                            )}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
+                    <BoldPoints points={conclusion.points} numbers={conclusion.numbers} />
                     <p className="mt-2 text-[10px] text-neutral-500">
                       {conclusionInfo[platform] && `${conclusionInfo[platform]} · `}
                       {conclusion.generator === "stub" && "stub dev · "}
@@ -1207,6 +1252,54 @@ export default function UploadManager({
                       buat kesimpulan — hasilnya mengisi slide Kesimpulan di PPT.
                     </p>
                   )
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Rekomendasi & Action Plan per platform (Fase A) — ketikan user manual, bukan AI.
+          Tampil PERSIS apa adanya di slide Rekomendasi (baris baru dipertahankan);
+          kosong = slide dilewati. */}
+      <div className="mt-8">
+        <h3 className="text-sm font-medium text-neutral-300">Rekomendasi &amp; Action Plan</h3>
+        <div className="mt-3 space-y-3">
+          {platforms.map((platform) => {
+            const label = platform === "shopee" ? "Shopee" : "TikTok";
+            return (
+              <div
+                key={platform}
+                className="rounded-xl border border-neutral-800 bg-neutral-900 p-3"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-neutral-400">
+                    Rekomendasi {label}
+                  </span>
+                  <button
+                    onClick={() => saveRecommendation(platform)}
+                    disabled={recoSaving[platform]}
+                    className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-800 disabled:opacity-50"
+                  >
+                    {recoSaving[platform] ? "Menyimpan…" : "Simpan"}
+                  </button>
+                </div>
+                <textarea
+                  value={recoDraft[platform] ?? ""}
+                  onChange={(e) => {
+                    setRecoDraft((p) => ({ ...p, [platform]: e.target.value }));
+                    setRecoMessage((p) => ({ ...p, [platform]: "" }));
+                  }}
+                  rows={5}
+                  placeholder={`Ketik rekomendasi & action plan ${label} di sini — tampil apa adanya di slide (kosong = slide dilewati).`}
+                  className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-blue-500"
+                />
+                {recoMessage[platform] && (
+                  <p
+                    className={`mt-1 text-xs ${recoMessage[platform].startsWith("Tersimpan") || recoMessage[platform].startsWith("Kosong") ? "text-teal-300" : "text-red-400"}`}
+                  >
+                    {recoMessage[platform]}
+                  </p>
                 )}
               </div>
             );

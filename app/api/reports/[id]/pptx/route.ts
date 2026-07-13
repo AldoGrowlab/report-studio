@@ -31,6 +31,7 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/reports/[id
       },
       insights: { select: { sectionId: true, points: true, numbers: true } },
       conclusions: { select: { platform: true, points: true, numbers: true } },
+      recommendations: { select: { platform: true, content: true } },
     },
   });
   if (!report) {
@@ -98,7 +99,12 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/reports/[id
       ? { points: conclusionRow.points, numbers: conclusionRow.numbers }
       : null;
 
-    blocks.push({ platform, sections, conclusion });
+    // Rekomendasi manual user (Fase A) — kosong/absen = slide dilewati (null).
+    const recoRow = report.recommendations.find((r) => r.platform === platform);
+    const recommendation =
+      recoRow && recoRow.content.trim().length > 0 ? recoRow.content : null;
+
+    blocks.push({ platform, sections, conclusion, recommendation });
   }
 
   // Tema global aktif (Tahap 10): baris Theme pertama; belum ada -> default netral.
@@ -127,6 +133,11 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/reports/[id
       headingFont: themeRow.headingFont,
       bodyFont: themeRow.bodyFont,
       logo,
+      contacts: {
+        email: themeRow.contactEmail,
+        website: themeRow.contactWebsite,
+        instagram: themeRow.contactInstagram,
+      },
     };
   }
 

@@ -43,6 +43,14 @@ export function tint(hex: string, factor: number): string {
   return `${channel(0)}${channel(2)}${channel(4)}`;
 }
 
+// Luminans persepsi sederhana (0.299R + 0.587G + 0.114B): penentu apakah warna cukup
+// gelap untuk teks terang di atasnya. Dipakai renderer PPT supaya tema berprimer TERANG
+// tidak menghasilkan teks putih di latar terang (kontras selalu terjaga).
+export function isDarkColor(hex: string): boolean {
+  const v = (offset: number) => parseInt(hex.slice(offset, offset + 2), 16);
+  return 0.299 * v(0) + 0.587 * v(2) + 0.114 * v(4) < 150;
+}
+
 // Bentuk tema yang dikonsumsi renderer PPT (lib/ppt.ts tetap murni — ini cuma data).
 export type ThemeColors = {
   primary: string;
@@ -56,7 +64,9 @@ export type ThemeColors = {
 };
 
 export const DEFAULT_THEME_COLORS: ThemeColors = {
-  primary: "1F2937",
+  // Fase B (gaya agency): default primer HITAM — gaya report acuan. Tetap bisa diganti
+  // founder di /dashboard/theme; hanya default-nya yang mengarah ke gaya agency.
+  primary: "111111",
   secondary: "6B7280",
   accent: "2563EB",
   accentOverride: false,

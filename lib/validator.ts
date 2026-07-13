@@ -1,5 +1,11 @@
 import type { Platform } from "@prisma/client";
-import { HARD_MAX_POINTS, TARGET_POINTS } from "@/lib/analyst";
+import {
+  HARD_MAX_POINTS,
+  parseStructuredPoints,
+  POINTS_SCHEMA,
+  pointsOutputRule,
+  renderStoredPoints,
+} from "@/lib/analyst";
 
 // Tahap 7a — Validator, peran pertama: MENULIS kesimpulan per platform (DESIGN
 // §Validator & Kesimpulan). Membaca SEMUA insight section satu platform lalu merangkumnya
@@ -31,7 +37,7 @@ export type ValidatorOutcome = {
 
 function renderSections(sections: ValidatorSection[]): string {
   return sections
-    .map((s) => `Section "${s.sectionName}":\n${s.points.map((p) => `- ${p}`).join("\n")}`)
+    .map((s) => `Section "${s.sectionName}":\n${renderStoredPoints(s.points)}`)
     .join("\n\n");
 }
 
@@ -63,32 +69,15 @@ async function concludeWithClaude(input: ValidatorInput): Promise<string[]> {
     `(mis. GMV) di section berbeda bisa punya konteks/filter berbeda dan itu sah.\n` +
     `3. HANYA platform ${platformLabel}. DILARANG menyebut atau membandingkan dengan ` +
     `platform lain.\n` +
-    `4. Bentuk keluaran: idealnya MAKSIMAL ${TARGET_POINTS} poin — boleh lebih HANYA kalau ` +
-    `rangkumannya memang kaya, dan JANGAN PERNAH lebih dari ${HARD_MAX_POINTS} poin. Tiap ` +
-    `poin SATU kalimat ringkas yang mudah di-scan di slide presentasi. JANGAN menulis ` +
-    `simbol bullet/nomor di awal poin (tampilan yang memberi bullet). TANPA judul.\n` +
+    `4. ${pointsOutputRule("rangkumannya")}\n` +
     `5. Rangkai lintas-section: angkat benang merah, kekuatan, dan perhatian utama — ` +
     `bukan mengulang tiap insight satu-satu.`;
-
-  const schema = {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      // Catatan: structured output TIDAK mendukung maxItems — target lunak dijaga instruksi
-      // prompt, atap keras HARD_MAX_POINTS dijaga pemotongan saat parsing.
-      points: {
-        type: "array",
-        items: { type: "string" },
-      },
-    },
-    required: ["points"],
-  } as const;
 
   const response = await client.messages.create({
     model: MODEL,
     max_tokens: 16000,
     thinking: { type: "adaptive" },
-    output_config: { format: { type: "json_schema", schema } },
+    output_config: { format: { type: "json_schema", schema: POINTS_SCHEMA } },
     messages: [{ role: "user", content: instruction }],
   });
 
@@ -96,15 +85,7 @@ async function concludeWithClaude(input: ValidatorInput): Promise<string[]> {
   if (!textBlock || textBlock.type !== "text") {
     throw new Error("Validator: respons model tidak berisi teks.");
   }
-  const parsed = JSON.parse(textBlock.text) as { points?: string[] };
-  const points = (parsed.points ?? [])
-    .map((p) => (typeof p === "string" ? p.trim() : ""))
-    .filter((p) => p.length > 0)
-    .slice(0, HARD_MAX_POINTS); // atap keras: kalau model meleset, ambil 8 pertama
-  if (points.length === 0) {
-    throw new Error("Validator: model tidak mengembalikan poin kesimpulan.");
-  }
-  return points;
+  return parseStructuredPoints(textBlock.text, "Validator");
 }
 
 // ---- Stub dev (tanpa API key) ----
@@ -158,10 +139,7 @@ async function checkWithClaude(input: ConsistencyInput): Promise<ConsistencyIssu
 
   const platformLabel = input.platform === "shopee" ? "Shopee" : "TikTok";
   const numbered = input.sections
-    .map(
-      (s, i) =>
-        `Section ${i} — "${s.sectionName}":\n${s.points.map((p) => `- ${p}`).join("\n")}`
-    )
+    .map((s, i) => `Section ${i} — "${s.sectionName}":\n${renderStoredPoints(s.points)}`)
     .join("\n\n");
 
   const instruction =

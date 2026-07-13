@@ -68,11 +68,22 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "Font body tidak ada di daftar aman." }, { status: 400 });
   }
 
+  // Kontak slide Thank You (Fase A): teks bebas, trim, boleh kosong (= tak ditampilkan).
+  const contacts: Record<string, string> = {};
+  for (const field of ["contactEmail", "contactWebsite", "contactInstagram"] as const) {
+    const raw = b?.[field];
+    if (typeof raw !== "string") {
+      return NextResponse.json({ error: `${field} harus berupa teks.` }, { status: 400 });
+    }
+    contacts[field] = raw.trim();
+  }
+
   const current = await getOrCreateTheme();
   const theme = await prisma.theme.update({
     where: { id: current.id },
     data: {
       ...colors,
+      ...contacts,
       headingFont,
       bodyFont,
       accentOverride: Boolean(b?.accentOverride),

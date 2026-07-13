@@ -95,11 +95,27 @@ model Report {
   createdById  String
   createdAt    DateTime     @default(now())
 
-  createdBy   User         @relation(fields: [createdById], references: [id])
-  uploads     Upload[]
-  flags       Flag[]
-  insights    Insight[]
-  conclusions Conclusion[]
+  createdBy       User             @relation(fields: [createdById], references: [id])
+  uploads         Upload[]
+  flags           Flag[]
+  insights        Insight[]
+  conclusions     Conclusion[]
+  recommendations Recommendation[]
+}
+
+// Fase A (gaya agency, Jul 2026) — "Rekomendasi & Action Plan" per (report, platform).
+// DIKETIK USER MANUAL, bukan AI: teks bebas apa adanya (baris baru dipertahankan),
+// TANPA bold otomatis, TANPA diproses model. Kosong = slide rekomendasi dilewati.
+model Recommendation {
+  id        String   @id @default(cuid())
+  reportId  String
+  platform  Platform
+  content   String
+  updatedAt DateTime @updatedAt
+
+  report Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@unique([reportId, platform])
 }
 
 model Upload {
@@ -228,7 +244,7 @@ model ValidatorKb {
 // (format pptxgenjs). Belum ada baris → default netral dipakai (tanpa error).
 model Theme {
   id             String   @id @default(cuid())
-  primaryColor   String   @default("1F2937") // warna utama brand: panel cover, band kesimpulan, judul
+  primaryColor   String   @default("111111") // warna utama brand (default hitam gaya agency, Fase B)
   secondaryColor String   @default("6B7280") // pendukung: kicker, caption, footer, garis pemisah
   accentColor    String   @default("2563EB") // aksen dasar: bar judul, garis, panel insight
   headingFont    String   @default("Calibri")
@@ -237,6 +253,10 @@ model Theme {
   accentOverride Boolean  @default(false) // ON -> aksen per platform dipakai, bukan aksen dasar
   accentShopee   String   @default("EE4D2D")
   accentTiktok   String   @default("111827")
+  // Fase A (gaya agency) — kontak slide Thank You; kosong = bagian itu tak ditampilkan.
+  contactEmail     String @default("officialgrowlab.id@gmail.com")
+  contactWebsite   String @default("www.growlab.id")
+  contactInstagram String @default("@growlab.id")
   updatedAt      DateTime @updatedAt
 }
 

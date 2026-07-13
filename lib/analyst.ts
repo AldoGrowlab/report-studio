@@ -1,5 +1,10 @@
 import type { ExtractionStatus, MetricType, Platform } from "@prisma/client";
 import { formatMonthID, type PeriodChange } from "@/lib/period";
+import {
+  flattenPoints,
+  SUB_POINT_PREFIX,
+  type StructuredPoint,
+} from "@/lib/insight-format";
 
 // Tahap 6a — Analyst dasar (satu periode, tanpa perbandingan antar bulan).
 // Menarik angka TERKINI dari Extraction (single source of truth) + KB analisa section,
@@ -77,6 +82,65 @@ export type AnalystOutcome = {
   generator: "claude" | "stub";
   points: string[];
 };
+
+// ---- Bentuk keluaran BERSAMA (Fase C): poin + sub-poin SATU tingkat ----
+// Dipakai TIGA jalur LLM: generate insight, revisi insight (Validator -> Analyst), dan
+// kesimpulan Validator — supaya format & atapnya seragam. Target/atap dihitung atas
+// TOTAL BARIS (poin + sub-poin) agar slide tidak meluber.
+
+export function pointsOutputRule(richNoun: string): string {
+  return (
+    `Bentuk keluaran: poin-poin. Tiap poin BOLEH punya sub-poin (field "sub") KALAU memang ` +
+    `membantu kejelasan — kamu yang memutuskan, jangan dipaksakan; SATU tingkat saja, tidak ` +
+    `lebih dalam. Jumlah TOTAL BARIS (poin + sub-poin): idealnya MAKSIMAL ${TARGET_POINTS} — ` +
+    `boleh lebih HANYA kalau ${richNoun} memang kaya, dan JANGAN PERNAH lebih dari ` +
+    `${HARD_MAX_POINTS}. Tiap baris SATU kalimat ringkas yang mudah di-scan di slide ` +
+    `presentasi. JANGAN menulis simbol bullet/nomor di awal (tampilan yang memberi bullet). ` +
+    `TANPA caption, TANPA judul.`
+  );
+}
+
+// Structured output: { points: [{ text, sub: string[] }] }. Catatan: TIDAK mendukung
+// maxItems — target lunak dijaga instruksi prompt, atap keras dipotong saat parsing.
+export const POINTS_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    points: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          text: { type: "string" },
+          sub: { type: "array", items: { type: "string" } },
+        },
+        required: ["text", "sub"],
+      },
+    },
+  },
+  required: ["points"],
+} as const;
+
+// Respons model -> array datar prefix-tab, dipotong atap keras atas TOTAL BARIS.
+// Pemotongan pada hasil rata aman: sub selalu tepat setelah induknya (tanpa sub yatim).
+export function parseStructuredPoints(rawJson: string, who: string): string[] {
+  const parsed = JSON.parse(rawJson) as { points?: StructuredPoint[] };
+  const flat = flattenPoints(parsed.points ?? []).slice(0, HARD_MAX_POINTS);
+  if (flat.length === 0) {
+    throw new Error(`${who}: model tidak mengembalikan poin.`);
+  }
+  return flat;
+}
+
+// Render poin existing (bisa mengandung prefix-tab) ke teks prompt yang rapi.
+export function renderStoredPoints(points: string[]): string {
+  return points
+    .map((p) =>
+      p.startsWith(SUB_POINT_PREFIX) ? `  - (sub) ${p.replace(/^\t+/, "")}` : `- ${p}`
+    )
+    .join("\n");
+}
 
 // Blok angka yang dikirim ke model — hanya bentuk singkat yang boleh dikutip.
 // Section ber-perbandingan: blok dilabeli BULAN (bukan "Sumber #n") + penanda utama.
@@ -160,31 +224,14 @@ async function analyzeWithClaude(input: AnalystInput): Promise<string[]> {
       : ` Perbandingan antar periode/bulan juga DILARANG (belum ada datanya).\n`) +
     sourceRule(input, multiSource) +
     `3. Metrik "tidak tersedia" cukup disebut tidak tersedia — jangan berspekulasi nilainya.\n` +
-    `4. Bentuk keluaran: idealnya MAKSIMAL ${TARGET_POINTS} poin — boleh lebih HANYA kalau ` +
-    `analisanya memang kaya, dan JANGAN PERNAH lebih dari ${HARD_MAX_POINTS} poin. Tiap poin ` +
-    `SATU kalimat ringkas yang mudah di-scan di slide presentasi. JANGAN menulis simbol ` +
-    `bullet/nomor di awal poin (tampilan yang memberi bullet). TANPA caption, TANPA judul. ` +
+    `4. ${pointsOutputRule("analisanya")} ` +
     `Fokus pada apa yang dikatakan angka menurut kerangka KB.`;
-
-  const schema = {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      // Catatan: structured output TIDAK mendukung maxItems — target lunak dijaga instruksi
-      // prompt, atap keras HARD_MAX_POINTS dijaga pemotongan saat parsing.
-      points: {
-        type: "array",
-        items: { type: "string" },
-      },
-    },
-    required: ["points"],
-  } as const;
 
   const response = await client.messages.create({
     model: MODEL,
     max_tokens: 16000,
     thinking: { type: "adaptive" },
-    output_config: { format: { type: "json_schema", schema } },
+    output_config: { format: { type: "json_schema", schema: POINTS_SCHEMA } },
     messages: [{ role: "user", content: instruction }],
   });
 
@@ -192,20 +239,13 @@ async function analyzeWithClaude(input: AnalystInput): Promise<string[]> {
   if (!textBlock || textBlock.type !== "text") {
     throw new Error("Analyst: respons model tidak berisi teks.");
   }
-  const parsed = JSON.parse(textBlock.text) as { points?: string[] };
-  const points = (parsed.points ?? [])
-    .map((p) => (typeof p === "string" ? p.trim() : ""))
-    .filter((p) => p.length > 0)
-    .slice(0, HARD_MAX_POINTS); // atap keras: kalau model meleset, ambil 8 pertama
-  if (points.length === 0) {
-    throw new Error("Analyst: model tidak mengembalikan poin insight.");
-  }
-  return points;
+  return parseStructuredPoints(textBlock.text, "Analyst");
 }
 
 // ---- Stub dev (tanpa API key) ----
 // Poin deterministik yang memperlihatkan angka singkat per sumber, untuk menguji pipeline.
 // Untuk section ber-perbandingan ikut memuat changeText — bold persen teruji tanpa API.
+// Menyertakan SATU contoh sub-poin (prefix tab) supaya render bertingkat teruji tanpa API.
 function analyzeWithStub(input: AnalystInput): string[] {
   const multiSource = input.sources.length > 1;
   const points = input.sources.map((s) => {
@@ -219,6 +259,15 @@ function analyzeWithStub(input: AnalystInput): string[] {
         : "";
     return `[DEV STUB]${label} ${nums}.`;
   });
+  const firstMetric = input.sources[0]?.metrics[0];
+  if (firstMetric) {
+    points.splice(
+      1,
+      0,
+      `${SUB_POINT_PREFIX}[DEV STUB] sub-poin: ${firstMetric.label} = ` +
+        `${firstMetric.valueText ?? "tidak tersedia"}.`
+    );
+  }
   for (const c of input.periodComparison?.changes ?? []) {
     points.push(
       `[DEV STUB] ${c.label} ${formatMonthID(c.toMonth)} ${c.changeText} vs ` +
@@ -265,7 +314,7 @@ async function reviseWithClaude(
         `${renderChanges(input.periodComparison.changes)}\n\n`
       : "") +
     `Poin insight SEKARANG (yang harus direvisi):\n` +
-    `${existingPoints.map((p) => `- ${p}`).join("\n")}\n\n` +
+    `${renderStoredPoints(existingPoints)}\n\n` +
     `Instruksi koreksi dari Validator:\n` +
     `${instructions.map((s) => `- ${s}`).join("\n")}\n\n` +
     `Aturan WAJIB (sama dengan penulisan awal):\n` +
@@ -279,27 +328,15 @@ async function reviseWithClaude(
       : `\n`) +
     sourceRule(input, multiSource) +
     `3. Metrik "tidak tersedia" cukup disebut tidak tersedia — jangan berspekulasi nilainya.\n` +
-    `4. Bentuk keluaran: idealnya MAKSIMAL ${TARGET_POINTS} poin — boleh lebih HANYA kalau ` +
-    `analisanya memang kaya, dan JANGAN PERNAH lebih dari ${HARD_MAX_POINTS} poin. Tiap poin ` +
-    `SATU kalimat ringkas yang mudah di-scan di slide presentasi. JANGAN menulis simbol ` +
-    `bullet/nomor di awal poin. TANPA caption, TANPA judul.\n` +
+    `4. ${pointsOutputRule("analisanya")}\n` +
     `5. Poin yang tidak disinggung instruksi koreksi pertahankan maknanya (boleh disesuaikan ` +
     `seperlunya agar keseluruhan tetap koheren).`;
-
-  const schema = {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      points: { type: "array", items: { type: "string" } },
-    },
-    required: ["points"],
-  } as const;
 
   const response = await client.messages.create({
     model: MODEL,
     max_tokens: 16000,
     thinking: { type: "adaptive" },
-    output_config: { format: { type: "json_schema", schema } },
+    output_config: { format: { type: "json_schema", schema: POINTS_SCHEMA } },
     messages: [{ role: "user", content: instruction }],
   });
 
@@ -307,15 +344,7 @@ async function reviseWithClaude(
   if (!textBlock || textBlock.type !== "text") {
     throw new Error("Analyst (revisi): respons model tidak berisi teks.");
   }
-  const parsed = JSON.parse(textBlock.text) as { points?: string[] };
-  const points = (parsed.points ?? [])
-    .map((p) => (typeof p === "string" ? p.trim() : ""))
-    .filter((p) => p.length > 0)
-    .slice(0, HARD_MAX_POINTS);
-  if (points.length === 0) {
-    throw new Error("Analyst (revisi): model tidak mengembalikan poin insight.");
-  }
-  return points;
+  return parseStructuredPoints(textBlock.text, "Analyst (revisi)");
 }
 
 export async function reviseInsight(

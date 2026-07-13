@@ -18,6 +18,10 @@ type ThemeRow = {
   accentOverride: boolean;
   accentShopee: string;
   accentTiktok: string;
+  // Fase A — kontak slide Thank You; kosong = bagian itu tak ditampilkan di slide.
+  contactEmail: string;
+  contactWebsite: string;
+  contactInstagram: string;
 };
 
 function ColorInput({
@@ -298,6 +302,32 @@ export default function ThemePage() {
                     </button>
                   )}
                 </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-5">
+              <h2 className="text-sm font-medium text-neutral-200">Kontak (slide Thank You)</h2>
+              <p className="mt-0.5 text-xs text-neutral-500">
+                Muncul di slide penutup report. Kosongkan yang tidak mau ditampilkan.
+              </p>
+              <div className="mt-3 grid gap-4 sm:grid-cols-3">
+                {(
+                  [
+                    ["contactEmail", "Email"],
+                    ["contactWebsite", "Website"],
+                    ["contactInstagram", "Instagram"],
+                  ] as const
+                ).map(([field, label]) => (
+                  <div key={field}>
+                    <label className="block text-xs font-medium text-neutral-400">{label}</label>
+                    <input
+                      type="text"
+                      value={theme[field]}
+                      onChange={(e) => patch({ [field]: e.target.value })}
+                      className="mt-1 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                    />
+                  </div>
+                ))}
               </div>
             </div>
 
