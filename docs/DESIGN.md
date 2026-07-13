@@ -435,4 +435,17 @@ fotonya belum ada.
 
 - Railway Postgres cold-start: request pertama tiap sesi bisa 500 ("Can't reach database
   server"), retry sukses. Bukan bug. Pertimbangkan pesan error ramah saat DB belum siap.
-- Ganti password founder default sebelum produksi.
+- Ganti password founder default sebelum produksi. Akun uji audit
+  (`audit-operator@test.local`) dibuat saat audit Jul 2026 — hapus sebelum produksi.
+- **Uji beban (audit Jul 2026, dev server lokal — batas bawah konservatif):** 20 request
+  paralel campuran (14 generate PPT ke 2 report berbeda + 6 baca data) → 20/20 sukses,
+  tidak ada isi PPT tertukar (diverifikasi penanda periode+platform di tiap file; jalur PPT
+  bebas state modul mutable — hanya singleton set-once storage/prisma). PPT tunggal ~2,2s;
+  di bawah 14 pptx bersamaan naik ke rata-rata ~5s/maks 6,8s (CPU-bound, event loop Node);
+  puncak RSS proses dev +287 MB di atas baseline ~169 MB. Kesimpulan: ~20 user AMAN untuk
+  pola pakai nyata (generate PPT sesekali). Titik lemah pertama bila beban naik: banyak
+  generate PPT BERSAMAAN (CPU + buffer gambar in-memory) — mitigasi masa depan: antrian/
+  batas konkuren di route pptx, bukan optimasi prematur sekarang. LLM bersamaan aman secara
+  arsitektur (client per panggilan, input per-request, upsert berkunci unik); catatan: dua
+  generate serentak pada section yang sama = last-write-wins, dan snapshot lazy KbVersion
+  bisa membuat dua baris versi pada balapan ekstrem (jinak — hanya provenance).
