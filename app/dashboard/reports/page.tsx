@@ -7,9 +7,9 @@ export default async function ReportsPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  // Founder lihat semua report; user hanya miliknya.
+  // MODEL B (Jul 2026): semua akun terautentikasi melihat SEMUA report — operator
+  // bekerja bergantian pada report yang sama (lihat aturan di lib/reports.ts).
   const reports = await prisma.report.findMany({
-    where: session.role === "founder" ? {} : { createdById: session.userId },
     orderBy: { createdAt: "desc" },
     include: { _count: { select: { uploads: true } } },
   });

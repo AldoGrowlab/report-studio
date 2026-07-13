@@ -413,6 +413,24 @@ fotonya belum ada.
   file R2/disk semua upload dulu (cascade DB tidak menyentuh storage). Pola benar sudah ada di
   DELETE upload tunggal.
 
+## Akses & Permission (audit pra-deploy, Jul 2026)
+
+- **MODEL B akses report (keputusan user):** SEMUA akun terautentikasi (founder & operator)
+  boleh mengakses SEMUA report — buka, upload, generate insight/kesimpulan/PPT, isi
+  rekomendasi. Kepemilikan (`createdById`) BUKAN batas akses (operator bekerja bergantian
+  pada report yang sama). Satu titik aturan: `canAccessReport` (`lib/reports.ts`) — semua
+  route report-scoped tetap memanggilnya. Daftar report tampil semua untuk semua peran.
+- **Yang terlarang bagi operator hanya fitur founder:** KB section (`/api/sections*`),
+  KB Validator, users, flags, theme (+logo) — semuanya 403 untuk non-founder, terverifikasi
+  matriks runtime (anon/operator/founder) saat audit.
+- **Guard server halaman founder:** 5 halaman founder adalah client component — `layout.tsx`
+  server per route (`sections`, `users`, `theme`, `validator-kb`, `flags`) mengalihkan
+  non-founder SEBELUM shell terkirim (temuan audit: tanpa guard, shell fitur ter-render
+  meski data 403).
+- **Anti-bocor KB tidak langsung:** payload halaman report (bahan dropdown section) memilih
+  field eksplisit TANPA `kbAnalysis` — diverifikasi runtime terhadap fragmen isi KB
+  sungguhan dari DB, bukan cuma nama field. Jaga pola ini saat menambah endpoint/halaman.
+
 ## Catatan Operasional
 
 - Railway Postgres cold-start: request pertama tiap sesi bisa 500 ("Can't reach database
