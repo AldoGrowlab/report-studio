@@ -143,6 +143,13 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/reports/[id
 
   const buffer = await buildReportPptx({ reportPeriod: report.reportPeriod, blocks }, theme);
 
+  // Audit P5: transisi status saat PPT PERTAMA kali diunduh (draft -> downloaded).
+  // Hanya maju dari draft; tidak menimpa status lain. Efek samping pada GET disengaja
+  // (unduh = tindakan eksplisit user).
+  if (report.status === "draft") {
+    await prisma.report.update({ where: { id: reportId }, data: { status: "downloaded" } });
+  }
+
   // Nama file: fallback ASCII + filename* UTF-8 (periode bisa mengandung karakter non-ASCII).
   const baseName = `Laporan Performa ${report.reportPeriod}.pptx`;
   const asciiName = baseName.replace(/[^\x20-\x7E]/g, "_").replace(/"/g, "'");

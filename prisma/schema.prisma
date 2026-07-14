@@ -85,6 +85,8 @@ enum ReportStatus {
   draft
   processing
   done
+  // Audit P5 (Jul 2026): report transisi ke sini saat PPT-nya PERTAMA kali diunduh.
+  downloaded
 }
 
 model Report {
@@ -133,6 +135,9 @@ model Upload {
   periodMonth     String?
   isPrimaryPeriod Boolean @default(false)
   createdAt      DateTime @default(now())
+  // Audit P2 (Jul 2026): jejak waktu perubahan data (tambah/ganti bulan/label) untuk
+  // mendeteksi insight yang basi setelah data berubah. Baris lama di-backfill epoch.
+  updatedAt      DateTime @updatedAt
 
   report      Report       @relation(fields: [reportId], references: [id], onDelete: Cascade)
   section     Section      @relation(fields: [sectionId], references: [id])
@@ -156,6 +161,9 @@ model Extraction {
   // Tahap 5: true kalau user sudah konfirmasi/koreksi manual angka ini.
   // rawText & confidence asli TIDAK ditimpa (provenance OCR tetap utuh).
   manuallyConfirmed Boolean          @default(false)
+  // Audit P2 (Jul 2026): jejak waktu perubahan angka (koreksi manual / ekstrak ulang)
+  // untuk mendeteksi insight basi. Baris lama di-backfill epoch (belum berubah sejak).
+  updatedAt         DateTime         @updatedAt
 
   upload Upload @relation(fields: [uploadId], references: [id], onDelete: Cascade)
 }

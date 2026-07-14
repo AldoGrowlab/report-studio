@@ -431,6 +431,47 @@ fotonya belum ada.
   field eksplisit TANPA `kbAnalysis` — diverifikasi runtime terhadap fragmen isi KB
   sungguhan dari DB, bukan cuma nama field. Jaga pola ini saat menambah endpoint/halaman.
 
+## Audit kode menyeluruh (pra-deploy, Jul 2026)
+
+Sudah DIPERBAIKI (K = kritis, P = penting):
+- **K1** `AUTH_SECRET` wajib — fallback "" dihapus; `sign()` gagal keras kalau kosong
+  (lazy, import/build aman). Cegah pemalsuan cookie sesi founder.
+- **K2/K3** Fallback dev yang menyembunyikan salah-konfigurasi produksi kini gagal keras:
+  guard bersama `lib/llm.ts` (produksi tanpa `ANTHROPIC_API_KEY` → throw, tak nge-stub data
+  palsu); `getStorage()` (produksi tanpa R2 lengkap → throw, tak jatuh ke disk sementara).
+- **P1** Offboarding: `DELETE /api/users/[id]` (founder) — guard tak-hapus-diri-sendiri,
+  tak-hapus-founder-terakhir, pre-check report (409).
+- **P2/P3** Deteksi basi: `Extraction.updatedAt` + `Upload.updatedAt` (backfill epoch) →
+  halaman report menandai insight/kesimpulan yang datanya berubah sesudah dibuat +
+  peringatan di tombol Unduh PPT. (Catatan: hapus-foto-saja setelah generate TIDAK
+  memicu badge — max-timestamp tak turun; jarang, generate ulang tetap manual.)
+- **P4** Hapus section/user ber-relasi → pre-check count = 409 berpesan (relasi RESTRICT =
+  Postgres 23001 di-surface Prisma sbg UnknownRequestError, bukan P2003 — jangan andalkan
+  kode error).
+- **P5** `Report.status` transisi `draft → downloaded` saat PPT PERTAMA diunduh (enum
+  `downloaded` baru; hanya maju dari draft).
+- **P6** Root `/` → redirect `/login` (dulu template create-next-app).
+- **P7** Throttle login gagal (`lib/login-throttle.ts`, in-memory per email+IP): 3 percobaan
+  gratis lalu delay 0,5s→1s→2s→… (maks 8s), reset saat sukses.
+
+Utang teknis TERCATAT (M = minor, C = catatan — boleh pasca-deploy):
+- **M1** 2 warning eslint `_session`/`_report` unused di `lib/reports.ts` (sisa Model B).
+- **M2** Ekspor `PLATFORMS` (`lib/sections.ts`) tak terpakai.
+- **M3** `Upload.reportPeriod` ditulis tapi tak pernah dibaca (denormalisasi mati).
+- **M4** `package.json#prisma.seed` deprecated (warning Prisma); belum ada script `typecheck`.
+- **M6** `BoldPoints` (UploadManager) — ternary redundan pasca-redesign.
+- **M7** Cek duplikat-bulan + create upload tak satu transaksi (race dua upload bulan sama
+  bisa lolos; `buildAnalystSources` menolak saat generate — jinak).
+- **M8** Race `KbVersion` (dua generate serentak → dua baris versi sama) — jinak, opsional
+  `@@unique([sectionId, version])`.
+- **C** Cookie sesi memuat `role` (edit-role tak berlaku sampai sesi kedaluwarsa);
+  `canAccessReport` selalu true (Model B — branch redirect praktis mati, dipertahankan
+  sbg titik aturan); `UploadManager.tsx` ~1.4k baris (pecah saat sempat); pemotongan atap
+  sub-poin pada array rata (by design); `puppeteer-core` devDependency dari sesi screenshot.
+- **DB dev (Jul 2026):** instance Railway `railway` sempat ter-reset (data hilang, tabel
+  `_prisma_migrations` tak ada). Migrasi P2/P5 di-apply langsung via `db execute` ke DB dev;
+  DB produksi baru (Tahap 11) menerima seluruh migrasi via `migrate deploy` di DB kosong.
+
 ## Catatan Operasional
 
 - Railway Postgres cold-start: request pertama tiap sesi bisa 500 ("Can't reach database

@@ -49,6 +49,8 @@ type SectionInsight = {
   kbVersion: number;
   generator: string;
   updatedAt: string;
+  // Audit P2 — true kalau data (foto/angka) berubah SETELAH insight ini dibuat.
+  stale?: boolean;
 };
 
 // Kesimpulan Validator per platform (Tahap 7a) — tersimpan di tabel Conclusion.
@@ -59,6 +61,8 @@ type PlatformConclusion = {
   numbers: string[];
   generator: string;
   updatedAt: string;
+  // Audit P3 — true kalau insight se-platform berubah SETELAH kesimpulan ini dibuat.
+  stale?: boolean;
 };
 
 // "Rekomendasi & Action Plan" per platform (Fase A gaya agency) — DIKETIK USER MANUAL,
@@ -495,7 +499,8 @@ export default function UploadManager({
         setInsightError((p) => ({ ...p, [sectionId]: data.error || "Generate insight gagal." }));
         return;
       }
-      setInsights((p) => ({ ...p, [sectionId]: data.insight }));
+      // Baru di-generate dari data terkini -> tidak basi.
+      setInsights((p) => ({ ...p, [sectionId]: { ...data.insight, stale: false } }));
     } catch {
       setInsightError((p) => ({ ...p, [sectionId]: "Kesalahan jaringan." }));
     } finally {
@@ -589,11 +594,12 @@ export default function UploadManager({
         }));
         return;
       }
-      setConclusions((p) => ({ ...p, [platform]: data.conclusion }));
+      // Baru dirangkum dari poin insight terkini -> tidak basi.
+      setConclusions((p) => ({ ...p, [platform]: { ...data.conclusion, stale: false } }));
       // Tahap 7b: terapkan hasil cek konsistensi ke state — insight yang direvisi
       // Analyst, jejak revisinya, dan flag (server mengganti flag platform ini per run).
       for (const ins of (data.insights ?? []) as SectionInsight[]) {
-        setInsights((p) => ({ ...p, [ins.sectionId]: ins }));
+        setInsights((p) => ({ ...p, [ins.sectionId]: { ...ins, stale: false } }));
       }
       if (Array.isArray(data.revisions) && data.revisions.length > 0) {
         setRevisions((p) => [...(data.revisions as InsightRevisionView[]), ...p]);
@@ -629,13 +635,34 @@ export default function UploadManager({
   function downloadPptx() {
     const sectionIdsWithPhotos = [...new Set(saved.map((u) => u.sectionId))];
     const noInsight = sectionIdsWithPhotos.filter((id) => !insights[id]);
+    // Audit P2/P3 — peringatkan juga kalau insight/kesimpulan BASI: PPT akan memakai teks
+    // lama yang tak lagi cocok dengan angka terkini.
+    const staleInsight = sectionIdsWithPhotos.filter((id) => insights[id]?.stale);
+    const staleConcl = Object.values(conclusions).filter((c) => c.stale);
+    const warnings: string[] = [];
     if (noInsight.length > 0) {
       const names = noInsight.map((id) => saved.find((u) => u.sectionId === id)?.sectionName ?? id);
-      const ok = window.confirm(
-        `${noInsight.length} section belum ada insight — akan tampil foto saja:\n\n` +
-          names.map((n) => `• ${n}`).join("\n") +
-          `\n\nLanjut generate PPT?`
+      warnings.push(
+        `${noInsight.length} section belum ada insight — akan tampil foto saja:\n` +
+          names.map((n) => `• ${n}`).join("\n")
       );
+    }
+    if (staleInsight.length > 0) {
+      const names = staleInsight.map(
+        (id) => saved.find((u) => u.sectionId === id)?.sectionName ?? id
+      );
+      warnings.push(
+        `${staleInsight.length} insight BASI (angka berubah sesudahnya) — PPT pakai teks lama:\n` +
+          names.map((n) => `• ${n}`).join("\n")
+      );
+    }
+    if (staleConcl.length > 0) {
+      warnings.push(
+        `${staleConcl.length} kesimpulan BASI (insight berubah sesudahnya) — buat ulang dulu kalau perlu.`
+      );
+    }
+    if (warnings.length > 0) {
+      const ok = window.confirm(`${warnings.join("\n\n")}\n\nLanjut unduh PPT?`);
       if (!ok) return;
     }
     window.location.href = `/api/reports/${reportId}/pptx`;
@@ -1112,6 +1139,12 @@ export default function UploadManager({
                         )}
                         {insight ? (
                           <>
+                            {insight.stale && (
+                              <p className="mt-2 rounded-[10px] border border-warn/30 bg-warn/10 px-3 py-1.5 text-xs text-warn">
+                                Angka/foto berubah setelah insight ini dibuat — generate ulang
+                                supaya sesuai data terkini.
+                              </p>
+                            )}
                             <BoldPoints points={insight.points} numbers={insight.numbers} />
                             <p className="mt-2 text-[10px] text-fg-3">
                               KB v{insight.kbVersion}
@@ -1238,6 +1271,12 @@ export default function UploadManager({
                 )}
                 {conclusion ? (
                   <>
+                    {conclusion.stale && (
+                      <p className="mt-2 rounded-[10px] border border-warn/30 bg-warn/10 px-3 py-1.5 text-xs text-warn">
+                        Insight section berubah setelah kesimpulan ini dibuat — buat ulang
+                        supaya rangkumannya sesuai.
+                      </p>
+                    )}
                     <BoldPoints points={conclusion.points} numbers={conclusion.numbers} />
                     <p className="mt-2 text-[10px] text-fg-3">
                       {conclusionInfo[platform] && `${conclusionInfo[platform]} · `}

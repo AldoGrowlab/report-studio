@@ -42,9 +42,24 @@ export default async function ReportDetailPage({
       updatedAt: true,
     },
   });
+  // Audit P2/P3 — deteksi basi: kapan terakhir DATA (foto/angka) satu section berubah.
+  // Max dari Upload.updatedAt & Extraction.updatedAt semua foto section itu. Kalau lebih
+  // baru dari insight/kesimpulan yang sudah ada → tandai "angka berubah, generate ulang".
+  const dataChangedAt = new Map<string, number>();
+  const sectionPlatform = new Map<string, string>();
+  for (const u of report.uploads) {
+    sectionPlatform.set(u.sectionId, u.platform);
+    const t = Math.max(
+      u.updatedAt.getTime(),
+      ...u.extractions.map((e) => e.updatedAt.getTime())
+    );
+    dataChangedAt.set(u.sectionId, Math.max(dataChangedAt.get(u.sectionId) ?? 0, t));
+  }
+
   const initialInsights = insights.map((i) => ({
     ...i,
     updatedAt: i.updatedAt.toISOString(),
+    stale: (dataChangedAt.get(i.sectionId) ?? 0) > i.updatedAt.getTime(),
   }));
 
   // Kesimpulan Validator tersimpan (Tahap 7a) — satu per platform report.
@@ -58,10 +73,17 @@ export default async function ReportDetailPage({
       updatedAt: true,
     },
   });
-  const initialConclusions = conclusions.map((c) => ({
-    ...c,
-    updatedAt: c.updatedAt.toISOString(),
-  }));
+  // Kesimpulan basi kalau ada insight se-platform yang di-generate ulang ATAU datanya
+  // berubah SETELAH kesimpulan ditulis (kesimpulan merangkum poin insight yang kini beda).
+  const initialConclusions = conclusions.map((c) => {
+    const cTime = c.updatedAt.getTime();
+    const stale = insights.some(
+      (i) =>
+        sectionPlatform.get(i.sectionId) === c.platform &&
+        (i.updatedAt.getTime() > cTime || (dataChangedAt.get(i.sectionId) ?? 0) > cTime)
+    );
+    return { ...c, updatedAt: c.updatedAt.toISOString(), stale };
+  });
 
   // Rekomendasi & Action Plan tersimpan (Fase A) — ketikan user manual per platform.
   const recommendations = await prisma.recommendation.findMany({

@@ -74,6 +74,20 @@ export async function DELETE(_request: Request, ctx: RouteContext<"/api/sections
 
   const { id } = await ctx.params;
 
+  // Audit P4: pre-check foto yang masih menunjuk section ini. Relasi Upload->Section
+  // ON DELETE RESTRICT (Postgres 23001) di-surface Prisma sebagai UnknownRequestError,
+  // BUKAN P2003 — jadi mengandalkan kode error rapuh. Pre-check count = 409 deterministik,
+  // pesan jelas supaya founder hapus fotonya dulu (dulu lolos jadi 500 gundul).
+  const uploadCount = await prisma.upload.count({ where: { sectionId: id } });
+  if (uploadCount > 0) {
+    return NextResponse.json(
+      {
+        error: `Section ini masih dipakai ${uploadCount} foto di report. Hapus/pindahkan foto itu dulu sebelum menghapus section.`,
+      },
+      { status: 409 }
+    );
+  }
+
   try {
     await prisma.section.delete({ where: { id } });
   } catch (e) {
