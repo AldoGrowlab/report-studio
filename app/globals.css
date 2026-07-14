@@ -132,6 +132,37 @@ body {
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 12%, transparent);
   }
 
+  /* --- Kartu menu/aksi: hover hidup — border aksen menyala + lift halus --- */
+  .card-lift {
+    transition:
+      border-color 150ms ease-out,
+      background-color 150ms ease-out,
+      transform 150ms ease-out,
+      box-shadow 150ms ease-out;
+  }
+  .card-lift:hover {
+    border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-line));
+    background: var(--color-surface-2);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px -12px color-mix(in srgb, var(--color-accent) 25%, transparent);
+  }
+
+  /* --- Tekstur latar berkarakter-tenang: grid hairline + glow aksen samar --- */
+  .bg-grid-texture {
+    background-image:
+      radial-gradient(
+        720px 480px at 28% 34%,
+        color-mix(in srgb, var(--color-accent) 13%, transparent),
+        transparent 70%
+      ),
+      linear-gradient(var(--color-surface-2) 1px, transparent 1px),
+      linear-gradient(90deg, var(--color-surface-2) 1px, transparent 1px);
+    background-size:
+      100% 100%,
+      44px 44px,
+      44px 44px;
+  }
+
   /* --- Label kecil seksi (uppercase ber-spasi huruf — hierarki halaman padat) --- */
   .label-sm {
     font-size: 0.6875rem;

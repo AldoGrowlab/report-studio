@@ -2,6 +2,66 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import LogoutButton from "./LogoutButton";
 
+// Ikon garis sederhana (non-interaktif, currentColor) — satu gaya untuk semua kartu menu.
+function MenuIcon({ name }: { name: string }) {
+  const paths: Record<string, React.ReactNode> = {
+    layers: (
+      <>
+        <path d="M12 3 3 8l9 5 9-5-9-5Z" />
+        <path d="m3 13 9 5 9-5" />
+      </>
+    ),
+    shield: (
+      <>
+        <path d="M12 3c3 1.5 6 2 8 2 0 9-3.5 14-8 16-4.5-2-8-7-8-16 2 0 5-.5 8-2Z" />
+        <path d="m9 11.5 2 2 4-4.5" />
+      </>
+    ),
+    palette: (
+      <>
+        <path d="M12 21a9 9 0 1 1 9-9c0 2-1.5 3-3 3h-2a2 2 0 0 0-1.5 3.5c.5.7 0 2.5-2.5 2.5Z" />
+        <circle cx="8" cy="10" r="0.6" />
+        <circle cx="12" cy="7.5" r="0.6" />
+        <circle cx="16" cy="10" r="0.6" />
+      </>
+    ),
+    flag: (
+      <>
+        <path d="M5 21V4" />
+        <path d="M5 4c4-2 7 2 11 0v9c-4 2-7-2-11 0" />
+      </>
+    ),
+    report: (
+      <>
+        <path d="M6 3h8l4 4v14H6V3Z" />
+        <path d="M14 3v4h4" />
+        <path d="M9 13h6M9 17h4" />
+      </>
+    ),
+    users: (
+      <>
+        <circle cx="9" cy="8.5" r="3" />
+        <path d="M3.5 20c.7-3.2 3-5 5.5-5s4.8 1.8 5.5 5" />
+        <path d="M16 6.5a3 3 0 0 1 0 5.6M17.5 15.5c1.6.8 2.7 2.3 3 4.5" />
+      </>
+    ),
+  };
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-5 w-5"
+    >
+      {paths[name]}
+    </svg>
+  );
+}
+
 export default async function DashboardPage() {
   const session = await getSession();
 
@@ -12,72 +72,111 @@ export default async function DashboardPage() {
   const isFounder = session.role === "founder";
 
   const founderMenu = [
-    { label: "Section & KB", href: "/dashboard/sections" },
-    { label: "KB Validator", href: "/dashboard/validator-kb" },
-    { label: "Tema bulanan", href: "/dashboard/theme" },
-    { label: "Dashboard flag", href: "/dashboard/flags" },
-    { label: "Generate report", href: "/dashboard/reports" },
-    { label: "Kelola user", href: "/dashboard/users" },
+    {
+      label: "Section & KB",
+      href: "/dashboard/sections",
+      icon: "layers",
+      desc: "Kelola section, KB analisa, dan metrik tiap platform.",
+    },
+    {
+      label: "KB Validator",
+      href: "/dashboard/validator-kb",
+      icon: "shield",
+      desc: "Aturan merangkai narasi dan menulis kesimpulan.",
+    },
+    {
+      label: "Tema bulanan",
+      href: "/dashboard/theme",
+      icon: "palette",
+      desc: "Warna, font, logo, dan kontak untuk PPT.",
+    },
+    {
+      label: "Dashboard flag",
+      href: "/dashboard/flags",
+      icon: "flag",
+      desc: "Pantau flag lintas report — alat mempertajam KB.",
+    },
+    {
+      label: "Generate report",
+      href: "/dashboard/reports",
+      icon: "report",
+      desc: "Buat report, unggah screenshot, hasilkan insight & PPT.",
+    },
+    {
+      label: "Kelola user",
+      href: "/dashboard/users",
+      icon: "users",
+      desc: "Tambah akun founder dan operator tim.",
+    },
   ];
   const userMenu = [
-    { label: "Generate report", href: "/dashboard/reports" },
+    {
+      label: "Generate report",
+      href: "/dashboard/reports",
+      icon: "report",
+      desc: "Buat report, unggah screenshot, hasilkan insight & PPT.",
+    },
   ];
   const menu = isFounder ? founderMenu : userMenu;
 
   return (
     <div className="min-h-screen bg-ink text-fg">
-      <div className="mx-auto max-w-3xl px-6 py-12">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3.5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-line-2 bg-surface text-xs font-semibold tracking-tight text-fg">
+      {/* Header ringkas selebar layar dengan garis hairline bawah */}
+      <header className="border-b border-line">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-line-2 bg-surface text-xs font-semibold tracking-tight text-fg">
               RS
             </div>
-            <div>
-              <h1 className="text-xl font-semibold tracking-tight">Report Studio</h1>
-              <p className="mt-0.5 text-xs text-fg-3">
-                <span className="text-fg-2">{session.email}</span>
-                <span
-                  className={`badge ml-2 ${isFounder ? "bg-accent/15 text-accent-hi" : "bg-ok/15 text-ok"}`}
-                >
-                  {isFounder ? "Founder" : "Operator"}
-                </span>
-              </p>
-            </div>
+            <span className="text-sm font-semibold tracking-tight">Report Studio</span>
           </div>
-          <LogoutButton />
-        </div>
-
-        <p className="label-sm mt-10">Menu</p>
-        <div className="mt-3 grid gap-2.5">
-          {menu.map((item) => (
-            <a
-              key={item.label}
-              href={item.href ?? undefined}
-              className={`card group flex items-center justify-between px-5 py-4 text-sm font-medium text-fg-2 ${
-                item.href ? "card-hover cursor-pointer hover:text-fg" : "cursor-default opacity-60"
-              }`}
+          <div className="flex items-center gap-3">
+            <span className="hidden text-xs text-fg-3 sm:block">{session.email}</span>
+            <span
+              className={`badge ${isFounder ? "bg-accent/15 text-accent-hi" : "bg-ok/15 text-ok"}`}
             >
-              {item.label}
-              {item.href ? (
-                <span
-                  aria-hidden
-                  className="text-fg-3 transition-colors duration-150 group-hover:text-accent"
-                >
-                  →
-                </span>
-              ) : (
-                <span className="text-xs text-fg-3">segera</span>
-              )}
-            </a>
-          ))}
+              {isFounder ? "Founder" : "Operator"}
+            </span>
+            <LogoutButton />
+          </div>
         </div>
+      </header>
 
-        <p className="mt-10 text-xs text-fg-3">
+      <main className="mx-auto max-w-6xl px-6 py-12">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {isFounder ? "Kendali penuh studio" : "Mulai kerjakan report"}
+        </h1>
+        <p className="mt-1.5 text-sm text-fg-3">
           {isFounder
             ? "Kamu melihat menu founder lengkap."
             : "Kamu melihat menu operator (hanya generate report)."}
         </p>
-      </div>
+
+        {/* Grid kartu menu — manfaatkan lebar layar, bukan tumpukan baris */}
+        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {menu.map((item) => (
+            <a
+              key={item.label}
+              href={item.href ?? undefined}
+              className={`card group p-5 ${item.href ? "card-lift cursor-pointer" : "cursor-default opacity-60"}`}
+            >
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-surface-2 text-fg-2 transition-colors duration-150 group-hover:border-accent/40 group-hover:text-accent-hi">
+                <MenuIcon name={item.icon} />
+              </div>
+              <div className="mt-4 flex items-center justify-between">
+                <span className="text-sm font-medium text-fg">{item.label}</span>
+                <span
+                  aria-hidden
+                  className="text-fg-3 transition-all duration-150 group-hover:translate-x-0.5 group-hover:text-accent"
+                >
+                  →
+                </span>
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-fg-3">{item.desc}</p>
+            </a>
+          ))}
+        </div>
+      </main>
     </div>
   );
 }

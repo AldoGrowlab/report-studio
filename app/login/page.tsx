@@ -34,31 +34,42 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="relative min-h-screen flex items-center justify-center bg-ink px-4 overflow-hidden">
-      {/* Latar berkarakter tapi tenang: glow aksen samar + garis hairline — murni dekoratif */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0"
-        style={{
-          background:
-            "radial-gradient(560px 380px at 50% 32%, color-mix(in srgb, var(--color-accent) 7%, transparent), transparent 70%)",
-        }}
-      />
-      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px bg-line" />
-      <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-line" />
-
-      <div className="relative w-full max-w-sm">
-        {/* Identitas: monogram + wordmark */}
-        <div className="mb-8 flex flex-col items-center">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-line-2 bg-surface text-sm font-semibold tracking-tight text-fg">
+    <div className="min-h-screen bg-ink lg:grid lg:grid-cols-[1.15fr_1fr]">
+      {/* Panel BRAND (kiri di desktop, band atas di mobile): monogram besar + wordmark +
+          tagline di atas tekstur grid hairline & glow aksen — karakter tapi tenang. */}
+      <div className="bg-grid-texture relative flex flex-col justify-between overflow-hidden border-b border-line px-8 py-10 lg:border-b-0 lg:border-r lg:px-14 lg:py-12">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-line-2 bg-surface text-xs font-semibold tracking-tight text-fg">
             RS
           </div>
-          <h1 className="mt-4 text-xl font-semibold tracking-tight text-fg">Report Studio</h1>
-          <p className="mt-1 text-xs text-fg-3">Laporan performa, dirangkai otomatis</p>
+          <span className="text-sm font-medium tracking-tight text-fg-2">Report Studio</span>
         </div>
 
-        <div className="card p-7">
-          <div className="space-y-4">
+        <div className="py-14 lg:py-0">
+          <p className="label-sm">Internal tools · Growlab</p>
+          <h1 className="mt-4 max-w-md text-4xl font-semibold leading-tight tracking-tight text-fg lg:text-5xl">
+            Laporan performa,
+            <br />
+            <span className="text-accent-hi">dirangkai otomatis.</span>
+          </h1>
+          <p className="mt-5 max-w-sm text-sm leading-relaxed text-fg-2">
+            Screenshot masuk, angka diekstrak presisi, insight tersusun, PPT jadi —
+            satu alur untuk Shopee &amp; TikTok.
+          </p>
+        </div>
+
+        <p className="hidden text-xs text-fg-3 lg:block">
+          Monthly report yang konsisten, dari upload sampai slide.
+        </p>
+      </div>
+
+      {/* Panel FORM (kanan): fungsional persis sama — 2 input + 1 tombol + error/loading */}
+      <div className="flex items-center justify-center px-6 py-14 lg:px-14">
+        <div className="w-full max-w-sm">
+          <h2 className="text-xl font-semibold tracking-tight text-fg">Masuk</h2>
+          <p className="mt-1 text-sm text-fg-3">Pakai akun yang dibuatkan founder.</p>
+
+          <div className="mt-8 space-y-5">
             <div>
               <label className="label-sm mb-1.5 block">Email</label>
               <input
