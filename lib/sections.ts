@@ -19,7 +19,6 @@ export type SectionInput = {
   metrics: MetricInput[];
 };
 
-const PLATFORMS: Platform[] = ["shopee", "tiktok"];
 const METRIC_TYPES: MetricType[] = ["number", "currency", "percent", "ratio"];
 
 // Aturan inti: section "active" hanya kalau lengkap
@@ -122,4 +121,4 @@ export function parseSectionBody(body: unknown): ParseResult {
   };
 }
 
-export { PLATFORMS, METRIC_TYPES };
+export { METRIC_TYPES };

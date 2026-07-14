@@ -454,16 +454,22 @@ Sudah DIPERBAIKI (K = kritis, P = penting):
 - **P7** Throttle login gagal (`lib/login-throttle.ts`, in-memory per email+IP): 3 percobaan
   gratis lalu delay 0,5s→1s→2s→… (maks 8s), reset saat sukses.
 
-Utang teknis TERCATAT (M = minor, C = catatan — boleh pasca-deploy):
-- **M1** 2 warning eslint `_session`/`_report` unused di `lib/reports.ts` (sisa Model B).
-- **M2** Ekspor `PLATFORMS` (`lib/sections.ts`) tak terpakai.
-- **M3** `Upload.reportPeriod` ditulis tapi tak pernah dibaca (denormalisasi mati).
-- **M4** `package.json#prisma.seed` deprecated (warning Prisma); belum ada script `typecheck`.
-- **M6** `BoldPoints` (UploadManager) — ternary redundan pasca-redesign.
-- **M7** Cek duplikat-bulan + create upload tak satu transaksi (race dua upload bulan sama
-  bisa lolos; `buildAnalystSources` menolak saat generate — jinak).
-- **M8** Race `KbVersion` (dua generate serentak → dua baris versi sama) — jinak, opsional
-  `@@unique([sectionId, version])`.
+Sudah DIPERBAIKI (M = minor, kelompok terakhir audit):
+- **M1** eslint `argsIgnorePattern: "^_"` — argumen ber-prefix `_` (mis. param Model B
+  `canAccessReport`) tak lagi di-warning. tsc + eslint = NOL warning.
+- **M2** Ekspor mati `PLATFORMS` (`lib/sections.ts`) dibuang.
+- **M3** Kolom denormalisasi mati `Upload.reportPeriod` di-drop (hanya ditulis, tak dibaca).
+- **M4** Konfigurasi seed pindah `package.json#prisma` → `prisma.config.ts` (deprecation
+  hilang; `.env` dimuat manual via dotenv karena config file mematikan auto-load); script
+  `typecheck` ditambah.
+- **M6** `BoldPoints` (UploadManager) — ternary redundan disederhanakan.
+- **M7** `@@unique([reportId, sectionId, periodMonth])` di `Upload` — satu bulan satu foto
+  ditegakkan DB (NULL distinct → section non-perbandingan tetap boleh >1 foto); route
+  upload menangkap P2002 sebagai pesan ramah (race-safe).
+- **M8** `@@unique([sectionId, version])` di `KbVersion` — cegah duplikat versi; route
+  insight menangkap P2002 → pakai versi pemenang (tanpa 500).
+
+Utang teknis TERCATAT (C = catatan — boleh pasca-deploy):
 - **C** Cookie sesi memuat `role` (edit-role tak berlaku sampai sesi kedaluwarsa);
   `canAccessReport` selalu true (Model B — branch redirect praktis mati, dipertahankan
   sbg titik aturan); `UploadManager.tsx` ~1.4k baris (pecah saat sempat); pemotongan atap

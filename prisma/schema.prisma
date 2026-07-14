@@ -33,17 +33,17 @@ enum SectionStatus {
 }
 
 model Section {
-  id             String          @id @default(cuid())
-  platform       Platform
-  name           String
-  narrativeOrder Int
-  status         SectionStatus   @default(draft)
-  kbAnalysis     String          @default("")
+  id                   String        @id @default(cuid())
+  platform             Platform
+  name                 String
+  narrativeOrder       Int
+  status               SectionStatus @default(draft)
+  kbAnalysis           String        @default("")
   // Tahap 6b — opt-in founder: section ini membandingkan performa antar bulan.
   // Foto-fotonya ditandai bulan per-FOTO (Upload.periodMonth) + satu periode utama.
-  usesPeriodComparison Boolean   @default(false)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  usesPeriodComparison Boolean       @default(false)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
 
   metrics    SectionMetric[]
   uploads    Upload[]
@@ -79,6 +79,9 @@ model KbVersion {
   createdAt DateTime @default(now())
 
   section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  // Audit M8: cegah dua baris versi sama saat generate insight bersamaan (race).
+  @@unique([sectionId, version])
 }
 
 enum ReportStatus {
@@ -121,27 +124,31 @@ model Recommendation {
 }
 
 model Upload {
-  id             String   @id @default(cuid())
-  reportId       String
-  reportPeriod   String
-  platform       Platform
-  sectionId      String
-  imageUrl       String
-  labelConfirmed Boolean  @default(false)
+  id              String   @id @default(cuid())
+  reportId        String
+  platform        Platform
+  sectionId       String
+  imageUrl        String
+  labelConfirmed  Boolean  @default(false)
   // Tahap 6b — HANYA untuk section ber-perbandingan-periode (selain itu null/false):
   // periodMonth kanonik "YYYY-MM" (urut kronologis = urut string; label "Juni 2026"
   // hanya di render — lib/period.ts). isPrimaryPeriod ditandai EKSPLISIT user (tidak
   // pernah otomatis), maks SATU per (report, section) — ditegakkan server.
   periodMonth     String?
-  isPrimaryPeriod Boolean @default(false)
-  createdAt      DateTime @default(now())
+  isPrimaryPeriod Boolean  @default(false)
+  createdAt       DateTime @default(now())
   // Audit P2 (Jul 2026): jejak waktu perubahan data (tambah/ganti bulan/label) untuk
   // mendeteksi insight yang basi setelah data berubah. Baris lama di-backfill epoch.
-  updatedAt      DateTime @updatedAt
+  updatedAt       DateTime @updatedAt
 
   report      Report       @relation(fields: [reportId], references: [id], onDelete: Cascade)
   section     Section      @relation(fields: [sectionId], references: [id])
   extractions Extraction[]
+
+  // Audit M7: satu bulan = satu foto per (report, section). periodMonth NULL (section
+  // non-perbandingan) TIDAK bertabrakan — Postgres perlakukan NULL sebagai distinct,
+  // jadi ">1 foto = sumber terpisah" tetap boleh. Menegakkan aturan di level DB (race-safe).
+  @@unique([reportId, sectionId, periodMonth])
 }
 
 enum ExtractionStatus {
@@ -251,21 +258,21 @@ model ValidatorKb {
 // disengaja: PPT dirakit on-the-fly dengan tema aktif). Warna = hex 6 digit TANPA "#"
 // (format pptxgenjs). Belum ada baris → default netral dipakai (tanpa error).
 model Theme {
-  id             String   @id @default(cuid())
-  primaryColor   String   @default("111111") // warna utama brand (default hitam gaya agency, Fase B)
-  secondaryColor String   @default("6B7280") // pendukung: kicker, caption, footer, garis pemisah
-  accentColor    String   @default("2563EB") // aksen dasar: bar judul, garis, panel insight
-  headingFont    String   @default("Calibri")
-  bodyFont       String   @default("Calibri")
-  logoKey        String? // key storage (lib/storage.ts); null = tanpa logo
-  accentOverride Boolean  @default(false) // ON -> aksen per platform dipakai, bukan aksen dasar
-  accentShopee   String   @default("EE4D2D")
-  accentTiktok   String   @default("111827")
+  id               String   @id @default(cuid())
+  primaryColor     String   @default("111111") // warna utama brand (default hitam gaya agency, Fase B)
+  secondaryColor   String   @default("6B7280") // pendukung: kicker, caption, footer, garis pemisah
+  accentColor      String   @default("2563EB") // aksen dasar: bar judul, garis, panel insight
+  headingFont      String   @default("Calibri")
+  bodyFont         String   @default("Calibri")
+  logoKey          String? // key storage (lib/storage.ts); null = tanpa logo
+  accentOverride   Boolean  @default(false) // ON -> aksen per platform dipakai, bukan aksen dasar
+  accentShopee     String   @default("EE4D2D")
+  accentTiktok     String   @default("111827")
   // Fase A (gaya agency) — kontak slide Thank You; kosong = bagian itu tak ditampilkan.
-  contactEmail     String @default("officialgrowlab.id@gmail.com")
-  contactWebsite   String @default("www.growlab.id")
-  contactInstagram String @default("@growlab.id")
-  updatedAt      DateTime @updatedAt
+  contactEmail     String   @default("officialgrowlab.id@gmail.com")
+  contactWebsite   String   @default("www.growlab.id")
+  contactInstagram String   @default("@growlab.id")
+  updatedAt        DateTime @updatedAt
 }
 
 enum FlagSeverity {

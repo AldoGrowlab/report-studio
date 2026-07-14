@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { canAccessReport } from "@/lib/reports";
@@ -60,18 +61,35 @@ export async function POST(request: Request, ctx: RouteContext<"/api/reports/[id
     where: { sectionId },
     orderBy: { version: "desc" },
   });
-  const kbVersion =
-    latestKb && latestKb.content === section.kbAnalysis
-      ? latestKb.version
-      : (
-          await prisma.kbVersion.create({
-            data: {
-              sectionId,
-              version: (latestKb?.version ?? 0) + 1,
-              content: section.kbAnalysis,
-            },
-          })
-        ).version;
+  let kbVersion: number;
+  if (latestKb && latestKb.content === section.kbAnalysis) {
+    kbVersion = latestKb.version;
+  } else {
+    try {
+      kbVersion = (
+        await prisma.kbVersion.create({
+          data: {
+            sectionId,
+            version: (latestKb?.version ?? 0) + 1,
+            content: section.kbAnalysis,
+          },
+        })
+      ).version;
+    } catch (e) {
+      // Audit M8: unique (sectionId, version) menangkap race — request lain sudah membuat
+      // versi yang sama. Pakai versi terbaru yang isinya = KB sekarang (buatan pemenang).
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        const existing = await prisma.kbVersion.findFirst({
+          where: { sectionId, content: section.kbAnalysis },
+          orderBy: { version: "desc" },
+        });
+        if (!existing) throw e;
+        kbVersion = existing.version;
+      } else {
+        throw e;
+      }
+    }
+  }
 
   let outcome;
   try {

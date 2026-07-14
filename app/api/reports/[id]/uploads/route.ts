@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { canAccessReport, MAX_UPLOAD_BYTES } from "@/lib/reports";
@@ -104,28 +105,43 @@ export async function POST(request: Request, ctx: RouteContext<"/api/reports/[id
   const bytes = new Uint8Array(await file.arrayBuffer());
   await getStorage().put(key, bytes, file.type);
 
-  const upload = await prisma.$transaction(async (tx) => {
-    if (isPrimaryPeriod) {
-      // Satu utama per (report, section): utama baru meng-unset yang lama.
-      await tx.upload.updateMany({
-        where: { reportId, sectionId: section.id, isPrimaryPeriod: true },
-        data: { isPrimaryPeriod: false },
+  let upload;
+  try {
+    upload = await prisma.$transaction(async (tx) => {
+      if (isPrimaryPeriod) {
+        // Satu utama per (report, section): utama baru meng-unset yang lama.
+        await tx.upload.updateMany({
+          where: { reportId, sectionId: section.id, isPrimaryPeriod: true },
+          data: { isPrimaryPeriod: false },
+        });
+      }
+      return tx.upload.create({
+        data: {
+          reportId,
+          platform: section.platform,
+          sectionId: section.id,
+          imageUrl: key,
+          labelConfirmed: true,
+          periodMonth,
+          isPrimaryPeriod,
+        },
+        include: { section: { select: { id: true, name: true } } },
       });
-    }
-    return tx.upload.create({
-      data: {
-        reportId,
-        reportPeriod: report.reportPeriod,
-        platform: section.platform,
-        sectionId: section.id,
-        imageUrl: key,
-        labelConfirmed: true,
-        periodMonth,
-        isPrimaryPeriod,
-      },
-      include: { section: { select: { id: true, name: true } } },
     });
-  });
+  } catch (e) {
+    // Audit M7: unique (report, section, periodMonth) menangkap race dua upload bulan
+    // sama yang lolos pre-check. Bersihkan file yang sudah terunggah, beri pesan sama.
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      await getStorage().delete(key);
+      return NextResponse.json(
+        {
+          error: `Bulan ${periodMonth ? formatMonthID(periodMonth) : ""} sudah ada fotonya di section ini — satu bulan satu foto.`,
+        },
+        { status: 400 }
+      );
+    }
+    throw e;
+  }
 
   return NextResponse.json({ upload }, { status: 201 });
 }

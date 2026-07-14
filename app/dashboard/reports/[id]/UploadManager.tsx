@@ -135,18 +135,11 @@ function BoldPoints({
               depth === 1 ? (small ? "pl-4" : "pl-6") : ""
             }`}
           >
-            <span className={small ? "text-fg-3" : "text-fg-3"}>
-              {depth === 1 ? "–" : "•"}
-            </span>
+            <span className="text-fg-3">{depth === 1 ? "–" : "•"}</span>
             <span>
               {splitByNumbers(text, numbers).map((seg, si) =>
                 seg.bold ? (
-                  <strong
-                    key={si}
-                    className={
-                      small ? "font-semibold text-fg" : "font-semibold text-fg"
-                    }
-                  >
+                  <strong key={si} className="font-semibold text-fg">
                     {seg.text}
                   </strong>
                 ) : (
