@@ -25,37 +25,54 @@ export default async function DashboardPage() {
   const menu = isFounder ? founderMenu : userMenu;
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100">
-      <div className="mx-auto max-w-3xl px-6 py-10">
+    <div className="min-h-screen bg-ink text-fg">
+      <div className="mx-auto max-w-3xl px-6 py-12">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">Report Studio</h1>
-            <p className="mt-1 text-sm text-neutral-400">
-              Masuk sebagai <span className="text-neutral-200">{session.email}</span>{" "}
-              <span className={`ml-1 rounded px-2 py-0.5 text-xs font-medium ${isFounder ? "bg-blue-500/15 text-blue-300" : "bg-teal-500/15 text-teal-300"}`}>
-                {isFounder ? "Founder" : "Operator"}
-              </span>
-            </p>
+          <div className="flex items-center gap-3.5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-line-2 bg-surface text-xs font-semibold tracking-tight text-fg">
+              RS
+            </div>
+            <div>
+              <h1 className="text-xl font-semibold tracking-tight">Report Studio</h1>
+              <p className="mt-0.5 text-xs text-fg-3">
+                <span className="text-fg-2">{session.email}</span>
+                <span
+                  className={`badge ml-2 ${isFounder ? "bg-accent/15 text-accent-hi" : "bg-ok/15 text-ok"}`}
+                >
+                  {isFounder ? "Founder" : "Operator"}
+                </span>
+              </p>
+            </div>
           </div>
           <LogoutButton />
         </div>
 
-        <div className="mt-8 grid gap-3">
+        <p className="label-sm mt-10">Menu</p>
+        <div className="mt-3 grid gap-2.5">
           {menu.map((item) => (
             <a
               key={item.label}
               href={item.href ?? undefined}
-              className={`flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900 px-5 py-4 text-sm font-medium text-neutral-200 ${
-                item.href ? "hover:border-neutral-700 hover:bg-neutral-800 cursor-pointer" : "cursor-default opacity-60"
+              className={`card group flex items-center justify-between px-5 py-4 text-sm font-medium text-fg-2 ${
+                item.href ? "card-hover cursor-pointer hover:text-fg" : "cursor-default opacity-60"
               }`}
             >
               {item.label}
-              {!item.href && <span className="text-xs text-neutral-500">segera</span>}
+              {item.href ? (
+                <span
+                  aria-hidden
+                  className="text-fg-3 transition-colors duration-150 group-hover:text-accent"
+                >
+                  →
+                </span>
+              ) : (
+                <span className="text-xs text-fg-3">segera</span>
+              )}
             </a>
           ))}
         </div>
 
-        <p className="mt-8 text-xs text-neutral-500">
+        <p className="mt-10 text-xs text-fg-3">
           {isFounder
             ? "Kamu melihat menu founder lengkap."
             : "Kamu melihat menu operator (hanya generate report)."}

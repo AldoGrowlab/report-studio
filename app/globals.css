@@ -1,26 +1,154 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* ============================================================================
+   Report Studio — design tokens (redesign GELAP, Jul 2026).
+   SATU sumber gaya untuk seluruh app: palet, radius, font. Halaman memakai
+   utilitas token (bg-ink, text-fg-2, border-line, …) + kelas komponen di bawah —
+   bukan gaya tempel per halaman. Murni visual: tidak ada perilaku di sini.
+   ========================================================================== */
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@theme {
+  /* Latar & permukaan (elevation = beda permukaan, bukan shadow berat) */
+  --color-ink: #0a0a0c; /* latar dasar app */
+  --color-surface: #121216; /* kartu/panel */
+  --color-surface-2: #18181d; /* input, hover, elemen bersarang */
+  --color-line: #26262c; /* border hairline */
+  --color-line-2: #33333a; /* border saat hover/fokus lembut */
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Hierarki teks 3 tingkat */
+  --color-fg: #f2f2f4;
+  --color-fg-2: #a1a1ab;
+  --color-fg-3: #70707a;
+
+  /* SATU aksen terkendali */
+  --color-accent: #5e8bff;
+  --color-accent-hi: #7aa2ff;
+
+  /* Semantik — MAKNA WARNA BADGE DIPERTAHANKAN (amber info, merah tinggi, teal ok) */
+  --color-ok: #34d399;
+  --color-warn: #f5b84c;
+  --color-danger: #f87171;
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --radius-card: 14px;
+  --radius-ctl: 10px;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-ink);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+}
+
+/* Fokus keyboard konsisten di semua kontrol */
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
+  outline-offset: 1px;
+}
+
+@layer components {
+  /* --- Kartu/panel --- */
+  .card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card);
+  }
+  .card-hover {
+    transition:
+      border-color 150ms ease-out,
+      background-color 150ms ease-out;
+  }
+  .card-hover:hover {
+    border-color: var(--color-line-2);
+    background: var(--color-surface-2);
+  }
+
+  /* --- Tombol --- */
+  .btn-primary,
+  .btn-ghost,
+  .btn-danger {
+    border-radius: var(--radius-ctl);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    padding: 0.5rem 0.875rem;
+    transition:
+      background-color 150ms ease-out,
+      border-color 150ms ease-out,
+      color 150ms ease-out;
+  }
+  .btn-primary {
+    background: var(--color-accent);
+    color: #0b0e18;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--color-accent-hi);
+  }
+  .btn-ghost {
+    border: 1px solid var(--color-line-2);
+    color: var(--color-fg-2);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    border-color: var(--color-fg-3);
+    color: var(--color-fg);
+    background: var(--color-surface-2);
+  }
+  .btn-danger {
+    border: 1px solid transparent;
+    color: var(--color-danger);
+  }
+  .btn-danger:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--color-danger) 40%, transparent);
+    background: color-mix(in srgb, var(--color-danger) 8%, transparent);
+  }
+  .btn-primary:disabled,
+  .btn-ghost:disabled,
+  .btn-danger:disabled {
+    opacity: 0.45;
+  }
+
+  /* --- Kontrol form --- */
+  .input,
+  .select,
+  .textarea {
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-ctl);
+    color: var(--color-fg);
+    font-size: 0.875rem;
+    padding: 0.5rem 0.75rem;
+    transition: border-color 150ms ease-out;
+  }
+  .input::placeholder,
+  .textarea::placeholder {
+    color: var(--color-fg-3);
+  }
+  .input:focus,
+  .select:focus,
+  .textarea:focus {
+    outline: none;
+    border-color: color-mix(in srgb, var(--color-accent) 60%, var(--color-line));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 12%, transparent);
+  }
+
+  /* --- Label kecil seksi (uppercase ber-spasi huruf — hierarki halaman padat) --- */
+  .label-sm {
+    font-size: 0.6875rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-fg-3);
+  }
+
+  /* --- Badge satu sistem (warna makna via util text/bg token di pemakaian) --- */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 6px;
+    padding: 0.125rem 0.5rem;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    line-height: 1.4;
+  }
 }
