@@ -175,6 +175,17 @@ let _storage: Storage | null = null;
 export function getStorage(): Storage {
   if (_storage) return _storage;
   const cfg = r2Config();
+  // KRITIS (audit pra-deploy): disk lokal Railway BERSIFAT SEMENTARA — file hilang tiap
+  // redeploy. Kalau R2 tak terkonfigurasi lengkap (termasuk salah ketik satu env), dulu
+  // jatuh diam-diam ke disk & foto lenyap tanpa error. Di produksi kini GAGAL KERAS.
+  if (!cfg && process.env.NODE_ENV === "production") {
+    throw new Error(
+      "R2 tidak terkonfigurasi lengkap (butuh R2_BUCKET, R2_ENDPOINT, R2_ACCESS_KEY_ID, " +
+        "R2_SECRET_ACCESS_KEY) — storage disk lokal tidak aman di produksi (file hilang saat " +
+        "redeploy). Set kredensial R2."
+    );
+  }
   _storage = cfg ? createR2Storage(cfg) : createLocalStorage();
+  console.log(`[storage] backend aktif: ${_storage.backend}`);
   return _storage;
 }

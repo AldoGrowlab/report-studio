@@ -2,7 +2,21 @@ import { cookies } from "next/headers";
 import crypto from "crypto";
 
 const COOKIE_NAME = "rs_session";
-const SECRET = process.env.AUTH_SECRET || "";
+
+// Rahasia HMAC WAJIB ada. Dulu fallback "" — kalau AUTH_SECRET lupa diset, cookie sesi
+// bisa dipalsukan dengan kunci kosong (siapa pun bisa menghitung tanda tangan founder).
+// Kini gagal keras. Dibaca lazy (bukan konstanta modul) supaya import & `next build`
+// tetap aman; yang gagal adalah operasi tanda tangan pertama (login / baca sesi).
+function secret(): string {
+  const s = process.env.AUTH_SECRET;
+  if (!s) {
+    throw new Error(
+      "AUTH_SECRET tidak diset — sesi tidak bisa ditandatangani dengan aman. " +
+        "Set env AUTH_SECRET (string acak panjang) sebelum menjalankan aplikasi."
+    );
+  }
+  return s;
+}
 
 // Struktur isi sesi yang kita simpan di cookie
 export type SessionData = {
@@ -13,7 +27,7 @@ export type SessionData = {
 
 // Tanda tangan: mencegah cookie dipalsukan
 function sign(value: string): string {
-  const hmac = crypto.createHmac("sha256", SECRET);
+  const hmac = crypto.createHmac("sha256", secret());
   hmac.update(value);
   return hmac.digest("hex");
 }

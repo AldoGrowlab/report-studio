@@ -5,6 +5,7 @@ import {
   SUB_POINT_PREFIX,
   type StructuredPoint,
 } from "@/lib/insight-format";
+import { llmBackend } from "@/lib/llm";
 
 // Tahap 6a — Analyst dasar (satu periode, tanpa perbandingan antar bulan).
 // Menarik angka TERKINI dari Extraction (single source of truth) + KB analisa section,
@@ -279,7 +280,7 @@ function analyzeWithStub(input: AnalystInput): string[] {
 
 // Pilih backend berdasarkan env, sama seperti lib/extractor.ts & lib/storage.ts.
 export async function generateInsight(input: AnalystInput): Promise<AnalystOutcome> {
-  if (process.env.ANTHROPIC_API_KEY) {
+  if (llmBackend() === "claude") {
     const points = await analyzeWithClaude(input);
     return { generator: "claude", points };
   }
@@ -352,7 +353,7 @@ export async function reviseInsight(
   existingPoints: string[],
   instructions: string[]
 ): Promise<AnalystOutcome> {
-  if (process.env.ANTHROPIC_API_KEY) {
+  if (llmBackend() === "claude") {
     const points = await reviseWithClaude(input, existingPoints, instructions);
     return { generator: "claude", points };
   }

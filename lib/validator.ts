@@ -6,6 +6,7 @@ import {
   pointsOutputRule,
   renderStoredPoints,
 } from "@/lib/analyst";
+import { llmBackend } from "@/lib/llm";
 
 // Tahap 7a — Validator, peran pertama: MENULIS kesimpulan per platform (DESIGN
 // §Validator & Kesimpulan). Membaca SEMUA insight section satu platform lalu merangkumnya
@@ -99,7 +100,7 @@ function concludeWithStub(input: ValidatorInput): string[] {
 
 // Pilih backend berdasarkan env, sama seperti lib/analyst.ts & lib/extractor.ts.
 export async function generateConclusion(input: ValidatorInput): Promise<ValidatorOutcome> {
-  if (process.env.ANTHROPIC_API_KEY) {
+  if (llmBackend() === "claude") {
     const points = await concludeWithClaude(input);
     return { generator: "claude", points };
   }
@@ -215,7 +216,7 @@ async function checkWithClaude(input: ConsistencyInput): Promise<ConsistencyIssu
 export async function checkConsistency(
   input: ConsistencyInput
 ): Promise<ConsistencyOutcome> {
-  if (process.env.ANTHROPIC_API_KEY) {
+  if (llmBackend() === "claude") {
     const issues = await checkWithClaude(input);
     return { generator: "claude", issues };
   }

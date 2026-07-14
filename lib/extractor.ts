@@ -1,5 +1,6 @@
 import type { MetricType, ExtractionStatus, Platform } from "@prisma/client";
 import type { ImageBytes } from "@/lib/storage";
+import { llmBackend } from "@/lib/llm";
 
 // Metrik yang diharapkan section (memandu extractor).
 export type ExpectedMetric = { key: string; label: string; type: MetricType };
@@ -235,13 +236,14 @@ function extractWithStub(metrics: ExpectedMetric[]): ExtractionResult[] {
   });
 }
 
-// Pilih backend berdasarkan env, sama seperti lib/storage.ts.
+// Pilih backend via guard bersama (lib/llm.ts) — di produksi tanpa API key GAGAL KERAS,
+// tidak nge-stub angka palsu.
 export async function extractMetrics(
   metrics: ExpectedMetric[],
   image: ImageBytes,
   context: { sectionName: string; platform: Platform }
 ): Promise<ExtractionOutcome> {
-  if (process.env.ANTHROPIC_API_KEY) {
+  if (llmBackend() === "claude") {
     const results = await extractWithClaude(metrics, image, context);
     return { extractor: "claude", results };
   }
