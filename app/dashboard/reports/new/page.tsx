@@ -39,52 +39,50 @@ export default function NewReportPage() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100">
-      <div className="mx-auto max-w-md px-6 py-10">
+    <div className="bg-grid-texture min-h-screen bg-ink text-fg">
+      <div className="mx-auto max-w-md px-6 py-14">
         <button
           onClick={() => router.push("/dashboard/reports")}
-          className="text-sm text-neutral-400 hover:text-neutral-200"
+          className="text-sm text-fg-3 transition-colors hover:text-fg"
         >
           ← Kembali
         </button>
 
-        <h1 className="mt-4 text-2xl font-semibold">Report baru</h1>
-        <p className="mt-1 text-sm text-neutral-400">
-          Pilih platform dan periode. Setelah dibuat, kamu bisa unggah & labeli screenshot.
+        <h1 className="mt-6 text-2xl font-semibold tracking-tight">Report baru</h1>
+        <p className="mt-1.5 text-sm text-fg-3">
+          Pilih platform dan periode. Setelah dibuat, kamu bisa unggah &amp; labeli screenshot.
         </p>
 
-        <div className="mt-6 space-y-4 rounded-xl border border-neutral-800 bg-neutral-900 p-5">
+        <div className="card mt-7 space-y-5 p-6">
           <div>
-            <label className="block text-xs font-medium text-neutral-400 mb-1.5">Platform</label>
+            <label className="label-sm mb-1.5 block">Platform</label>
             <select
               value={platform}
               onChange={(e) => setPlatform(e.target.value as Platform)}
-              className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+              className="select w-full"
             >
               <option value="shopee">Shopee</option>
               <option value="tiktok">TikTok</option>
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-neutral-400 mb-1.5">
-              Periode report
-            </label>
+            <label className="label-sm mb-1.5 block">Periode report</label>
             <input
               type="text"
               value={reportPeriod}
               onChange={(e) => setReportPeriod(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-              className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+              className="input w-full"
               placeholder="mis. Juni 2026"
             />
           </div>
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
 
           <button
             onClick={handleCreate}
             disabled={submitting}
-            className="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+            className="btn-primary w-full py-2.5"
           >
             {submitting ? "Membuat…" : "Buat report"}
           </button>

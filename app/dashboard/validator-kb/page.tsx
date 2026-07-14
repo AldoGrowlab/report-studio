@@ -78,33 +78,33 @@ export default function ValidatorKbPage() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100">
-      <div className="mx-auto max-w-3xl px-6 py-10">
+    <div className="min-h-screen bg-ink text-fg">
+      <div className="mx-auto max-w-6xl px-6 py-12">
         <button
           onClick={() => router.push("/dashboard")}
-          className="text-sm text-neutral-400 hover:text-neutral-200"
+          className="text-sm text-fg-3 transition-colors hover:text-fg"
         >
           ← Dashboard
         </button>
-        <h1 className="mt-4 text-2xl font-semibold">KB Validator</h1>
-        <p className="mt-1 text-sm text-neutral-400">
+        <h1 className="mt-6 text-2xl font-semibold tracking-tight">KB Validator</h1>
+        <p className="mt-1.5 text-sm text-fg-3">
           Dua knowledge base per platform untuk Narrative Validator: cara merangkai section
           jadi satu cerita, dan cara menulis slide kesimpulan. Boleh kosong — Validator
           memakai penilaian umum sampai diisi.
         </p>
 
         {loading ? (
-          <p className="mt-8 text-sm text-neutral-500">Memuat…</p>
+          <p className="mt-8 text-sm text-fg-3">Memuat…</p>
         ) : (
-          <div className="mt-8 space-y-8">
+          <div className="mt-8 grid items-start gap-5 lg:grid-cols-2">
             {kbs.map((row) => (
               <div
                 key={row.platform}
-                className="rounded-xl border border-neutral-800 bg-neutral-900 p-5"
+                className="card p-6"
               >
-                <h2 className="text-lg font-medium">{PLATFORM_LABEL[row.platform]}</h2>
+                <h2 className="text-lg font-semibold tracking-tight">{PLATFORM_LABEL[row.platform]}</h2>
 
-                <label className="mt-4 block text-xs font-medium text-neutral-400">
+                <label className="label-sm mt-5 block">
                   KB general / merangkai
                 </label>
                 <textarea
@@ -112,10 +112,10 @@ export default function ValidatorKbPage() {
                   onChange={(e) => updateField(row.platform, "kbGeneral", e.target.value)}
                   rows={5}
                   placeholder="Bagaimana section-section dirangkai jadi satu cerita utuh sesuai gaya agency…"
-                  className="mt-1 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 placeholder-neutral-600 focus:border-neutral-500 focus:outline-none"
+                  className="textarea mt-1.5 w-full"
                 />
 
-                <label className="mt-4 block text-xs font-medium text-neutral-400">
+                <label className="label-sm mt-5 block">
                   KB kesimpulan
                 </label>
                 <textarea
@@ -123,26 +123,26 @@ export default function ValidatorKbPage() {
                   onChange={(e) => updateField(row.platform, "kbConclusion", e.target.value)}
                   rows={5}
                   placeholder="Bagaimana menulis slide kesimpulan yang baik…"
-                  className="mt-1 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 placeholder-neutral-600 focus:border-neutral-500 focus:outline-none"
+                  className="textarea mt-1.5 w-full"
                 />
 
                 <div className="mt-4 flex items-center gap-3">
                   <button
                     onClick={() => save(row)}
                     disabled={saving[row.platform]}
-                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+                    className="btn-primary"
                   >
                     {saving[row.platform] ? "Menyimpan…" : "Simpan"}
                   </button>
                   {message[row.platform] && (
                     <span
-                      className={`text-xs ${message[row.platform] === "Tersimpan." ? "text-teal-300" : "text-red-400"}`}
+                      className={`text-xs ${message[row.platform] === "Tersimpan." ? "text-ok" : "text-danger"}`}
                     >
                       {message[row.platform]}
                     </span>
                   )}
                   {row.updatedAt && (
-                    <span className="text-xs text-neutral-500">
+                    <span className="text-xs text-fg-3">
                       Terakhir disimpan {new Date(row.updatedAt).toLocaleString("id-ID")}
                     </span>
                   )}

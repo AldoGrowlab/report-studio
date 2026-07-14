@@ -137,11 +137,11 @@ export default async function ReportDetailPage({
   }));
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100">
-      <div className="mx-auto max-w-3xl px-6 py-10">
+    <div className="min-h-screen bg-ink text-fg">
+      <div className="mx-auto max-w-6xl px-6 py-12">
         <Link
           href="/dashboard/reports"
-          className="text-sm text-neutral-400 hover:text-neutral-200"
+          className="text-sm text-fg-3 transition-colors hover:text-fg"
         >
           ← Kembali ke daftar report
         </Link>
@@ -150,12 +150,12 @@ export default async function ReportDetailPage({
           {report.platforms.map((p) => (
             <span
               key={p}
-              className="rounded bg-neutral-800 px-2 py-0.5 text-xs font-medium text-neutral-300"
+              className="badge border border-line bg-surface-2 text-fg-2"
             >
               {p === "shopee" ? "Shopee" : "TikTok"}
             </span>
           ))}
-          <span className="rounded bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-300">
+          <span className="badge bg-warn/15 text-warn">
             {report.status}
           </span>
         </div>

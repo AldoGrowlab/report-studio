@@ -118,8 +118,8 @@ function BoldPoints({
     <ul
       className={
         small
-          ? "mt-1 space-y-1 text-xs text-neutral-300"
-          : "mt-2 space-y-1.5 text-sm text-neutral-200"
+          ? "mt-1 space-y-1 text-xs text-fg-2"
+          : "mt-2 space-y-1.5 text-sm text-fg-2"
       }
     >
       {points.map((line, pi) => {
@@ -131,7 +131,7 @@ function BoldPoints({
               depth === 1 ? (small ? "pl-4" : "pl-6") : ""
             }`}
           >
-            <span className={small ? "text-neutral-600" : "text-neutral-500"}>
+            <span className={small ? "text-fg-3" : "text-fg-3"}>
               {depth === 1 ? "–" : "•"}
             </span>
             <span>
@@ -140,7 +140,7 @@ function BoldPoints({
                   <strong
                     key={si}
                     className={
-                      small ? "font-semibold text-neutral-100" : "font-semibold text-white"
+                      small ? "font-semibold text-fg" : "font-semibold text-fg"
                     }
                   >
                     {seg.text}
@@ -642,9 +642,9 @@ export default function UploadManager({
   }
 
   const statusBadge: Record<ExtractionStatus, string> = {
-    ok: "bg-teal-500/15 text-teal-300",
-    low_confidence: "bg-amber-500/15 text-amber-300",
-    missing: "bg-red-500/15 text-red-400",
+    ok: "bg-ok/15 text-ok",
+    low_confidence: "bg-warn/15 text-warn",
+    missing: "bg-danger/15 text-danger",
   };
   const statusLabel: Record<ExtractionStatus, string> = {
     ok: "ok",
@@ -668,21 +668,21 @@ export default function UploadManager({
   return (
     <div className="mt-8">
       {/* Area unggah */}
-      <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-5">
-        <h2 className="text-sm font-medium text-neutral-200">Unggah screenshot</h2>
+      <div className="card p-6">
+        <h2 className="text-sm font-medium text-fg">Unggah screenshot</h2>
         {noActiveSections ? (
-          <p className="mt-2 text-sm text-amber-300">
+          <p className="mt-2 text-sm text-warn">
             Belum ada section aktif untuk platform ini. Buat/aktifkan section dulu di Section &amp; KB
             sebelum melabeli foto.
           </p>
         ) : (
-          <p className="mt-1 text-xs text-neutral-500">
+          <p className="mt-1 text-xs text-fg-3">
             Pilih satu atau beberapa gambar. Tiap foto wajib dilabeli ke satu section sebelum
             disimpan.
           </p>
         )}
         <label className="mt-3 inline-block">
-          <span className="cursor-pointer rounded-lg border border-neutral-700 px-4 py-2 text-sm text-neutral-200 hover:bg-neutral-800">
+          <span className="btn-ghost cursor-pointer px-4 py-2">
             Pilih gambar…
           </span>
           <input
@@ -699,15 +699,15 @@ export default function UploadManager({
       {/* (1c) Pengingat: section aktif yang fotonya belum ada (DESIGN §Alur UX) */}
       {!noActiveSections &&
         (missing.length > 0 ? (
-          <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
-            <p className="text-xs font-medium text-amber-300">
+          <div className="mt-4 rounded-[14px] border border-warn/30 bg-warn/10 p-4">
+            <p className="text-xs font-medium text-warn">
               {missing.length} section aktif belum ada fotonya — lengkapi sebelum generate:
             </p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {missing.map((s) => (
                 <span
                   key={s.id}
-                  className="rounded bg-amber-500/15 px-2 py-0.5 text-xs text-amber-200"
+                  className="badge bg-warn/15 text-warn"
                 >
                   {sectionLabel(s)}
                 </span>
@@ -716,7 +716,7 @@ export default function UploadManager({
           </div>
         ) : (
           saved.length > 0 && (
-            <p className="mt-4 text-xs text-teal-300">
+            <p className="mt-4 text-xs text-ok">
               ✓ Semua section aktif sudah punya foto.
             </p>
           )
@@ -725,13 +725,13 @@ export default function UploadManager({
       {/* Antrian belum disimpan */}
       {pending.length > 0 && (
         <div className="mt-4 space-y-3">
-          <h3 className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+          <h3 className="label-sm">
             Belum disimpan ({pending.length})
           </h3>
           {pending.map((item) => (
             <div
               key={item.localId}
-              className="flex gap-3 rounded-xl border border-neutral-800 bg-neutral-900 p-3"
+              className="flex gap-3 card p-4"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
@@ -742,11 +742,11 @@ export default function UploadManager({
                 className="h-20 w-20 shrink-0 cursor-zoom-in rounded-lg object-cover transition hover:opacity-80"
               />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-xs text-neutral-400">{item.file.name}</p>
+                <p className="truncate text-xs text-fg-3">{item.file.name}</p>
                 <select
                   value={item.sectionId}
                   onChange={(e) => patchPending(item.localId, { sectionId: e.target.value, error: "" })}
-                  className="mt-1.5 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                  className="mt-1.5 select w-full"
                 >
                   <option value="">— pilih section —</option>
                   {sections.map((s) => (
@@ -764,7 +764,7 @@ export default function UploadManager({
                       onChange={(e) =>
                         patchPending(item.localId, { periodMonth: e.target.value, error: "" })
                       }
-                      className="rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                      className="select w-full"
                     >
                       <option value="">— bulan foto ini —</option>
                       {monthOpts.map((m) => (
@@ -773,32 +773,32 @@ export default function UploadManager({
                         </option>
                       ))}
                     </select>
-                    <label className="flex items-center gap-1.5 text-xs text-neutral-300">
+                    <label className="flex items-center gap-1.5 text-xs text-fg-2">
                       <input
                         type="checkbox"
                         checked={item.isPrimaryPeriod}
                         onChange={(e) =>
                           patchPending(item.localId, { isPrimaryPeriod: e.target.checked })
                         }
-                        className="accent-blue-500"
+                        className="accent-[#5E8BFF]"
                       />
                       Periode utama
                     </label>
                   </div>
                 )}
-                {item.error && <p className="mt-1 text-xs text-red-400">{item.error}</p>}
+                {item.error && <p className="mt-1 text-xs text-danger">{item.error}</p>}
                 <div className="mt-2 flex gap-2">
                   <button
                     onClick={() => savePending(item)}
                     disabled={item.saving}
-                    className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+                    className="btn-primary px-3 py-1.5 text-xs"
                   >
                     {item.saving ? "Menyimpan…" : "Simpan"}
                   </button>
                   <button
                     onClick={() => removePending(item.localId)}
                     disabled={item.saving}
-                    className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800 disabled:opacity-50"
+                    className="btn-ghost px-3 py-1.5 text-xs"
                   >
                     Buang
                   </button>
@@ -812,7 +812,7 @@ export default function UploadManager({
       {/* Foto tersimpan + ekstraksi */}
       <div className="mt-6">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-neutral-200">
+          <h3 className="text-sm font-medium text-fg">
             Foto tersimpan ({saved.length})
           </h3>
           {saved.length > 0 && (
@@ -820,13 +820,13 @@ export default function UploadManager({
               <button
                 onClick={extractAll}
                 disabled={Object.values(extracting).some(Boolean)}
-                className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-800 disabled:opacity-50"
+                className="btn-ghost px-3 py-1.5 text-xs"
               >
                 Ekstrak semua
               </button>
               <button
                 onClick={downloadPptx}
-                className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-500"
+                className="btn-primary px-3 py-1.5 text-xs"
               >
                 Unduh PPT
               </button>
@@ -834,7 +834,7 @@ export default function UploadManager({
           )}
         </div>
         {saved.length === 0 ? (
-          <p className="mt-2 text-sm text-neutral-500">Belum ada foto tersimpan.</p>
+          <p className="mt-2 text-sm text-fg-3">Belum ada foto tersimpan.</p>
         ) : (
           <div className="mt-3 space-y-4">
             {groups.map((g) => {
@@ -844,13 +844,13 @@ export default function UploadManager({
                 <div key={g.sectionId}>
                   {/* Header grup: satu section, bisa >1 sumber terpisah */}
                   <div className="flex items-center gap-2">
-                    <h4 className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+                    <h4 className="label-sm">
                       {groupName}
                     </h4>
                     {g.multiSource && (
                       <span
                         title="Tiap foto dinarasikan sebagai sumber terpisah — tidak pernah digabung/dijumlah"
-                        className="rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-medium text-blue-300"
+                        className="badge bg-accent/15 px-1.5 text-[10px] text-accent-hi"
                       >
                         {g.items.length} sumber terpisah
                       </span>
@@ -863,7 +863,7 @@ export default function UploadManager({
                         ? `${groupName} — Sumber #${srcIdx + 1}`
                         : groupName;
                       return (
-              <div key={u.id} className="rounded-xl border border-neutral-800 bg-neutral-900 p-3">
+              <div key={u.id} className="card p-4">
                 <div className="flex gap-3">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
@@ -875,14 +875,14 @@ export default function UploadManager({
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-sm font-medium text-neutral-200">
+                      <span className="truncate text-sm font-medium text-fg">
                         {cardTitle}
                       </span>
                       <div className="flex shrink-0 gap-2">
                         <button
                           onClick={() => extractOne(u.id)}
                           disabled={extracting[u.id]}
-                          className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+                          className="btn-primary px-3 py-1.5 text-xs"
                         >
                           {extracting[u.id]
                             ? "Mengekstrak…"
@@ -892,7 +892,7 @@ export default function UploadManager({
                         </button>
                         <button
                           onClick={() => deleteSaved(u)}
-                          className="text-xs text-neutral-500 hover:text-red-400"
+                          className="text-xs text-fg-3 hover:text-danger"
                         >
                           Hapus
                         </button>
@@ -909,7 +909,7 @@ export default function UploadManager({
                             e.target.value &&
                             patchSavedPeriod(u, { periodMonth: e.target.value })
                           }
-                          className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-xs text-neutral-200 outline-none focus:border-blue-500"
+                          className="select px-2 py-1 text-xs"
                         >
                           {!u.periodMonth && <option value="">— bulan? —</option>}
                           {monthOpts.map((m) => (
@@ -926,13 +926,13 @@ export default function UploadManager({
                             )}
                         </select>
                         {u.isPrimaryPeriod ? (
-                          <span className="rounded bg-blue-500/15 px-2 py-0.5 text-[10px] font-medium text-blue-300">
+                          <span className="badge bg-accent/15 px-2 text-[10px] text-accent-hi">
                             Periode utama
                           </span>
                         ) : (
                           <button
                             onClick={() => patchSavedPeriod(u, { isPrimaryPeriod: true })}
-                            className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+                            className="rounded border border-line-2 px-2 py-0.5 text-[10px] text-fg-3 hover:bg-surface-2 hover:text-fg-2"
                           >
                             Jadikan utama
                           </button>
@@ -941,29 +941,29 @@ export default function UploadManager({
                     )}
 
                     {extractError[u.id] && (
-                      <p className="mt-1 text-xs text-red-400">{extractError[u.id]}</p>
+                      <p className="mt-1 text-xs text-danger">{extractError[u.id]}</p>
                     )}
 
                     {u.extractions.length === 0 ? (
-                      <p className="mt-2 text-xs text-neutral-500">Belum diekstrak.</p>
+                      <p className="mt-2 text-xs text-fg-3">Belum diekstrak.</p>
                     ) : u.extractions.every((e) => e.status === "missing") &&
                       !manualFill[u.id] ? (
                       // Foto kosong: SEMUA metrik missing -> pesan level-foto, tabel disembunyikan.
                       // Sebagian missing tidak masuk sini (tabel tetap tampil normal).
                       <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <p className="text-xs text-amber-300">
+                        <p className="text-xs text-warn">
                           Tidak ada angka terbaca — mungkin bukan screenshot yang sesuai.
                         </p>
                         <button
                           onClick={() => setManualFill((p) => ({ ...p, [u.id]: true }))}
-                          className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-300 hover:bg-neutral-800"
+                          className="btn-ghost px-2 py-0.5 text-[10px]"
                         >
                           Isi manual
                         </button>
                       </div>
                     ) : (
                       <table className="mt-2 w-full text-xs">
-                        <thead className="text-neutral-500">
+                        <thead className="text-fg-3">
                           <tr>
                             <th className="py-1 text-left font-medium">Metrik</th>
                             <th className="py-1 text-left font-medium">Value</th>
@@ -977,9 +977,9 @@ export default function UploadManager({
                           {u.extractions.map((e) => {
                             const isEditing = e.id in editDraft;
                             return (
-                              <tr key={e.id} className="border-t border-neutral-800 align-top">
-                                <td className="py-1 pr-2 text-neutral-300">{e.key}</td>
-                                <td className="py-1 pr-2 text-neutral-100">
+                              <tr key={e.id} className="border-t border-line align-top">
+                                <td className="py-1 pr-2 text-fg-2">{e.key}</td>
+                                <td className="py-1 pr-2 text-fg">
                                   {isEditing ? (
                                     <div>
                                       <input
@@ -995,10 +995,10 @@ export default function UploadManager({
                                         }}
                                         autoFocus
                                         placeholder="kosong = tidak ada"
-                                        className="w-28 rounded border border-neutral-700 bg-neutral-950 px-2 py-0.5 text-xs outline-none focus:border-blue-500"
+                                        className="input w-28 px-2 py-0.5 text-xs"
                                       />
                                       {editError[e.id] && (
-                                        <p className="mt-0.5 text-[10px] text-red-400">
+                                        <p className="mt-0.5 text-[10px] text-danger">
                                           {editError[e.id]}
                                         </p>
                                       )}
@@ -1009,22 +1009,22 @@ export default function UploadManager({
                                     formatValueID(e.value)
                                   )}
                                 </td>
-                                <td className="py-1 pr-2 text-neutral-500 truncate max-w-[10rem]">
+                                <td className="py-1 pr-2 text-fg-3 truncate max-w-[10rem]">
                                   {e.rawText ?? "—"}
                                 </td>
-                                <td className="py-1 pr-2 text-right text-neutral-400">
+                                <td className="py-1 pr-2 text-right text-fg-3">
                                   {e.status === "missing" ? "—" : e.confidence.toFixed(2)}
                                 </td>
                                 <td className="py-1 text-right">
                                   <span
-                                    className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${statusBadge[e.status]}`}
+                                    className={`badge px-1.5 text-[10px] ${statusBadge[e.status]}`}
                                   >
                                     {statusLabel[e.status]}
                                   </span>
                                   {e.manuallyConfirmed && (
                                     <span
                                       title="Sudah dikonfirmasi/dikoreksi manual"
-                                      className="ml-1 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-medium text-blue-300"
+                                      className="ml-1 badge bg-accent/15 px-1.5 text-[10px] text-accent-hi"
                                     >
                                       ✓ manual
                                     </span>
@@ -1036,14 +1036,14 @@ export default function UploadManager({
                                       <button
                                         onClick={() => saveEdit(u.id, e.id)}
                                         disabled={editSaving[e.id]}
-                                        className="rounded bg-blue-600 px-2 py-0.5 text-[10px] font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+                                        className="btn-primary px-2 py-0.5 text-[10px]"
                                       >
                                         {editSaving[e.id] ? "…" : "Simpan"}
                                       </button>
                                       <button
                                         onClick={() => cancelEdit(e.id)}
                                         disabled={editSaving[e.id]}
-                                        className="ml-1 rounded border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-300 hover:bg-neutral-800 disabled:opacity-50"
+                                        className="ml-1 btn-ghost px-2 py-0.5 text-[10px]"
                                       >
                                         Batal
                                       </button>
@@ -1055,7 +1055,7 @@ export default function UploadManager({
                                           onClick={() => confirmOne(u.id, e)}
                                           disabled={editSaving[e.id]}
                                           title="Nilai sudah benar — tandai terkonfirmasi"
-                                          className="rounded bg-teal-600/80 px-2 py-0.5 text-[10px] font-medium text-white hover:bg-teal-500 disabled:opacity-50"
+                                          className="btn-primary px-2 py-0.5 text-[10px]"
                                         >
                                           Konfirmasi
                                         </button>
@@ -1063,12 +1063,12 @@ export default function UploadManager({
                                       <button
                                         onClick={() => startEdit(e)}
                                         disabled={editSaving[e.id]}
-                                        className="ml-1 rounded border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-300 hover:bg-neutral-800 disabled:opacity-50"
+                                        className="ml-1 btn-ghost px-2 py-0.5 text-[10px]"
                                       >
                                         Edit
                                       </button>
                                       {editError[e.id] && (
-                                        <p className="mt-0.5 text-[10px] text-red-400">
+                                        <p className="mt-0.5 text-[10px] text-danger">
                                           {editError[e.id]}
                                         </p>
                                       )}
@@ -1092,13 +1092,13 @@ export default function UploadManager({
                   {(() => {
                     const insight = insights[g.sectionId];
                     return (
-                      <div className="mt-2 rounded-xl border border-neutral-800 bg-neutral-900 p-3">
+                      <div className="mt-2 card p-4">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-medium text-neutral-400">Insight</span>
+                          <span className="label-sm">Insight</span>
                           <button
                             onClick={() => generateSectionInsight(g.sectionId)}
                             disabled={insightLoading[g.sectionId]}
-                            className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-800 disabled:opacity-50"
+                            className="btn-ghost px-3 py-1.5 text-xs"
                           >
                             {insightLoading[g.sectionId]
                               ? "Menganalisa…"
@@ -1108,12 +1108,12 @@ export default function UploadManager({
                           </button>
                         </div>
                         {insightError[g.sectionId] && (
-                          <p className="mt-1 text-xs text-red-400">{insightError[g.sectionId]}</p>
+                          <p className="mt-1 text-xs text-danger">{insightError[g.sectionId]}</p>
                         )}
                         {insight ? (
                           <>
                             <BoldPoints points={insight.points} numbers={insight.numbers} />
-                            <p className="mt-2 text-[10px] text-neutral-500">
+                            <p className="mt-2 text-[10px] text-fg-3">
                               KB v{insight.kbVersion}
                               {insight.generator === "stub" && " · stub dev"} ·{" "}
                               {new Date(insight.updatedAt).toLocaleString("id-ID")}
@@ -1131,29 +1131,29 @@ export default function UploadManager({
                                 return (
                                   <div
                                     key={rev.id}
-                                    className="mt-3 rounded-lg border border-neutral-800 bg-neutral-950 p-3"
+                                    className="mt-3 rounded-[10px] border border-line bg-ink p-3.5"
                                   >
-                                    <p className="text-xs font-medium text-neutral-300">
+                                    <p className="text-xs font-medium text-fg-2">
                                       Direvisi Validator ·{" "}
                                       {new Date(rev.createdAt).toLocaleString("id-ID")}
                                       {!rev.resolved && (
-                                        <span className="ml-2 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
+                                        <span className="ml-2 badge bg-warn/15 px-1.5 text-[10px] text-warn">
                                           masih bermasalah — ter-escalate (lihat Flag)
                                         </span>
                                       )}
                                     </p>
-                                    <p className="mt-1 whitespace-pre-line text-[11px] text-neutral-400">
+                                    <p className="mt-1 whitespace-pre-line text-[11px] text-fg-3">
                                       Alasan: {rev.reason}
                                     </p>
                                     <div className="mt-2 grid gap-3 sm:grid-cols-2">
                                       <div>
-                                        <p className="text-[10px] font-medium uppercase tracking-wide text-neutral-500">
+                                        <p className="label-sm text-[10px]">
                                           Sebelum
                                         </p>
                                         {renderPoints(rev.pointsBefore)}
                                       </div>
                                       <div>
-                                        <p className="text-[10px] font-medium uppercase tracking-wide text-neutral-500">
+                                        <p className="label-sm text-[10px]">
                                           Sesudah
                                         </p>
                                         {renderPoints(rev.pointsAfter)}
@@ -1165,7 +1165,7 @@ export default function UploadManager({
                           </>
                         ) : (
                           !insightError[g.sectionId] && (
-                            <p className="mt-2 text-xs text-neutral-500">
+                            <p className="mt-2 text-xs text-fg-3">
                               Belum ada insight. Ekstrak angka semua foto section ini dulu, lalu
                               generate.
                             </p>
@@ -1184,17 +1184,17 @@ export default function UploadManager({
       {/* Flag inkonsistensi (Tahap 7b) — hasil escalate Validator, WAJIB terlihat
           (bukan terkubur di log). Keadaan run "Buat kesimpulan" terakhir per platform. */}
       {flags.length > 0 && (
-        <div className="mt-8 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
-          <h3 className="text-sm font-medium text-amber-300">
+        <div className="mt-8 rounded-[14px] border border-warn/30 bg-warn/5 p-4">
+          <h3 className="text-sm font-medium text-warn">
             Flag ({flags.length}) — perlu dilihat
           </h3>
           <ul className="mt-2 space-y-2">
             {flags.map((f) => (
-              <li key={f.id} className="text-xs text-neutral-300">
-                <span className="font-medium text-amber-200">
+              <li key={f.id} className="text-xs text-fg-2">
+                <span className="font-medium text-warn">
                   ⚠ [{f.platform === "shopee" ? "Shopee" : "TikTok"}] {f.section}
                 </span>
-                <span className="mt-0.5 block whitespace-pre-line text-neutral-400">
+                <span className="mt-0.5 block whitespace-pre-line text-fg-3">
                   {f.note}
                 </span>
               </li>
@@ -1207,7 +1207,7 @@ export default function UploadManager({
           konsistensi -> revisi -> kesimpulan; mengisi slot Kesimpulan di PPT.
           Per-platform, tak pernah gabungan lintas-platform (DESIGN Prinsip #4). */}
       <div className="mt-8">
-        <h3 className="text-sm font-medium text-neutral-300">Kesimpulan</h3>
+        <h3 className="text-sm font-medium text-fg-2">Kesimpulan</h3>
         <div className="mt-3 space-y-3">
           {platforms.map((platform) => {
             const conclusion = conclusions[platform];
@@ -1215,16 +1215,16 @@ export default function UploadManager({
             return (
               <div
                 key={platform}
-                className="rounded-xl border border-neutral-800 bg-neutral-900 p-3"
+                className="card p-4"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-medium text-neutral-400">
+                  <span className="label-sm">
                     Kesimpulan {label}
                   </span>
                   <button
                     onClick={() => generateConclusion(platform)}
                     disabled={conclusionLoading[platform]}
-                    className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-800 disabled:opacity-50"
+                    className="btn-ghost px-3 py-1.5 text-xs"
                   >
                     {conclusionLoading[platform]
                       ? "Memeriksa & merangkum…"
@@ -1234,12 +1234,12 @@ export default function UploadManager({
                   </button>
                 </div>
                 {conclusionError[platform] && (
-                  <p className="mt-1 text-xs text-red-400">{conclusionError[platform]}</p>
+                  <p className="mt-1 text-xs text-danger">{conclusionError[platform]}</p>
                 )}
                 {conclusion ? (
                   <>
                     <BoldPoints points={conclusion.points} numbers={conclusion.numbers} />
-                    <p className="mt-2 text-[10px] text-neutral-500">
+                    <p className="mt-2 text-[10px] text-fg-3">
                       {conclusionInfo[platform] && `${conclusionInfo[platform]} · `}
                       {conclusion.generator === "stub" && "stub dev · "}
                       {new Date(conclusion.updatedAt).toLocaleString("id-ID")}
@@ -1247,7 +1247,7 @@ export default function UploadManager({
                   </>
                 ) : (
                   !conclusionError[platform] && (
-                    <p className="mt-2 text-xs text-neutral-500">
+                    <p className="mt-2 text-xs text-fg-3">
                       Belum ada kesimpulan. Generate insight semua section {label} dulu, lalu
                       buat kesimpulan — hasilnya mengisi slide Kesimpulan di PPT.
                     </p>
@@ -1263,23 +1263,23 @@ export default function UploadManager({
           Tampil PERSIS apa adanya di slide Rekomendasi (baris baru dipertahankan);
           kosong = slide dilewati. */}
       <div className="mt-8">
-        <h3 className="text-sm font-medium text-neutral-300">Rekomendasi &amp; Action Plan</h3>
+        <h3 className="text-sm font-medium text-fg-2">Rekomendasi &amp; Action Plan</h3>
         <div className="mt-3 space-y-3">
           {platforms.map((platform) => {
             const label = platform === "shopee" ? "Shopee" : "TikTok";
             return (
               <div
                 key={platform}
-                className="rounded-xl border border-neutral-800 bg-neutral-900 p-3"
+                className="card p-4"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-medium text-neutral-400">
+                  <span className="label-sm">
                     Rekomendasi {label}
                   </span>
                   <button
                     onClick={() => saveRecommendation(platform)}
                     disabled={recoSaving[platform]}
-                    className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-800 disabled:opacity-50"
+                    className="btn-ghost px-3 py-1.5 text-xs"
                   >
                     {recoSaving[platform] ? "Menyimpan…" : "Simpan"}
                   </button>
@@ -1292,11 +1292,11 @@ export default function UploadManager({
                   }}
                   rows={5}
                   placeholder={`Ketik rekomendasi & action plan ${label} di sini — tampil apa adanya di slide (kosong = slide dilewati).`}
-                  className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-blue-500"
+                  className="textarea mt-2 w-full"
                 />
                 {recoMessage[platform] && (
                   <p
-                    className={`mt-1 text-xs ${recoMessage[platform].startsWith("Tersimpan") || recoMessage[platform].startsWith("Kosong") ? "text-teal-300" : "text-red-400"}`}
+                    className={`mt-1 text-xs ${recoMessage[platform].startsWith("Tersimpan") || recoMessage[platform].startsWith("Kosong") ? "text-ok" : "text-danger"}`}
                   >
                     {recoMessage[platform]}
                   </p>
@@ -1316,10 +1316,10 @@ export default function UploadManager({
           aria-modal="true"
         >
           <div className="mb-2 flex w-full max-w-5xl items-center justify-between">
-            <span className="truncate text-sm text-neutral-300">{lightbox.label}</span>
+            <span className="truncate text-sm text-fg-2">{lightbox.label}</span>
             <button
               onClick={() => setLightbox(null)}
-              className="rounded-lg border border-neutral-600 px-3 py-1 text-sm text-neutral-200 hover:bg-neutral-800"
+              className="btn-ghost px-3 py-1"
             >
               Tutup ✕
             </button>

@@ -187,31 +187,32 @@ export default function SectionsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100">
-      <div className="mx-auto max-w-3xl px-6 py-10">
+    <div className="min-h-screen bg-ink text-fg">
+      <div className="mx-auto max-w-6xl px-6 py-12">
         <button
           onClick={() => router.push("/dashboard")}
-          className="text-sm text-neutral-400 hover:text-neutral-200"
+          className="text-sm text-fg-3 transition-colors hover:text-fg"
         >
           ← Kembali ke dashboard
         </button>
 
-        <h1 className="mt-4 text-2xl font-semibold">Section &amp; KB</h1>
-        <p className="mt-1 text-sm text-neutral-400">
+        <h1 className="mt-6 text-2xl font-semibold tracking-tight">Section &amp; KB</h1>
+        <p className="mt-1.5 text-sm text-fg-3">
           Atur section per platform beserta metrik yang diharapkan dan analisis KB-nya. Section
-          baru jadi <span className="text-teal-300">aktif</span> hanya kalau lengkap: nama + KB +
+          baru jadi <span className="text-ok">aktif</span> hanya kalau lengkap: nama + KB +
           minimal 1 metrik.
         </p>
 
+        <div className="mt-7 grid items-start gap-6 xl:grid-cols-2">
         {/* Form buat / edit */}
-        <div className="mt-6 rounded-xl border border-neutral-800 bg-neutral-900 p-5">
+        <div className="card p-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-medium text-neutral-200">
+            <h2 className="label-sm">
               {editingId ? "Edit section" : "Tambah section baru"}
             </h2>
             <span
-              className={`rounded px-2 py-0.5 text-xs font-medium ${
-                willBeActive ? "bg-teal-500/15 text-teal-300" : "bg-amber-500/15 text-amber-300"
+              className={`badge ${
+                willBeActive ? "bg-ok/15 text-ok" : "bg-warn/15 text-warn"
               }`}
             >
               {willBeActive ? "Akan jadi: Aktif" : "Akan jadi: Draft"}
@@ -220,67 +221,67 @@ export default function SectionsPage() {
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div>
-              <label className="block text-xs font-medium text-neutral-400 mb-1.5">Platform</label>
+              <label className="label-sm mb-1.5 block">Platform</label>
               <select
                 value={platform}
                 onChange={(e) => setPlatform(e.target.value as Platform)}
-                className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                className="input w-full"
               >
                 <option value="shopee">Shopee</option>
                 <option value="tiktok">TikTok</option>
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-neutral-400 mb-1.5">
+              <label className="label-sm mb-1.5 block">
                 Narrative order
               </label>
               <input
                 type="number"
                 value={narrativeOrder}
                 onChange={(e) => setNarrativeOrder(e.target.value)}
-                className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                className="input w-full"
                 placeholder="0"
               />
             </div>
             <div className="sm:col-span-2">
-              <label className="block text-xs font-medium text-neutral-400 mb-1.5">
+              <label className="label-sm mb-1.5 block">
                 Nama section
               </label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                className="input w-full"
                 placeholder="mis. Ringkasan Penjualan"
               />
             </div>
             <div className="sm:col-span-2">
-              <label className="block text-xs font-medium text-neutral-400 mb-1.5">
+              <label className="label-sm mb-1.5 block">
                 Analisis KB
               </label>
               <textarea
                 value={kbAnalysis}
                 onChange={(e) => setKbAnalysis(e.target.value)}
                 rows={4}
-                className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                className="textarea w-full"
                 placeholder="Panduan analisis / narasi untuk section ini…"
               />
             </div>
             <div className="sm:col-span-2">
               {/* Tahap 6b — opt-in perbandingan periode: foto section ini ditandai bulan
                   per-foto saat upload + satu periode utama (lihat DESIGN §Perbandingan Periode). */}
-              <label className="flex items-start gap-2.5 rounded-lg border border-neutral-800 bg-neutral-950 p-3">
+              <label className="flex items-start gap-2.5 rounded-[10px] border border-line bg-ink p-3.5">
                 <input
                   type="checkbox"
                   checked={usesPeriodComparison}
                   onChange={(e) => setUsesPeriodComparison(e.target.checked)}
-                  className="mt-0.5 accent-blue-500"
+                  className="mt-0.5 accent-[#5E8BFF]"
                 />
                 <span>
-                  <span className="block text-sm text-neutral-200">
+                  <span className="block text-sm text-fg-2">
                     Section ini pakai perbandingan periode
                   </span>
-                  <span className="mt-0.5 block text-xs text-neutral-500">
+                  <span className="mt-0.5 block text-xs text-fg-3">
                     Saat upload, tiap foto section ini ditandai bulan + tahun, dan satu foto
                     ditandai sebagai periode utama. Sistem menghitung perubahan antar bulan
                     (persen) untuk dinarasikan Analyst.
@@ -293,12 +294,12 @@ export default function SectionsPage() {
           {/* Editor metrik */}
           <div className="mt-5">
             <div className="flex items-center justify-between">
-              <label className="block text-xs font-medium text-neutral-400">
+              <label className="label-sm">
                 Expected metrics
               </label>
               <button
                 onClick={addMetric}
-                className="text-xs text-blue-400 hover:text-blue-300"
+                className="text-xs text-accent transition-colors hover:text-accent-hi"
               >
                 + Tambah metrik
               </button>
@@ -307,26 +308,26 @@ export default function SectionsPage() {
               {metrics.map((m, i) => (
                 <div
                   key={i}
-                  className="grid grid-cols-12 items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-950 p-2"
+                  className="grid grid-cols-12 items-center gap-2 rounded-[10px] border border-line bg-ink p-2"
                 >
                   <input
                     type="text"
                     value={m.key}
                     onChange={(e) => updateMetric(i, { key: e.target.value })}
-                    className="col-span-3 rounded border border-neutral-700 bg-neutral-900 px-2 py-1.5 text-xs outline-none focus:border-blue-500"
+                    className="input col-span-3 px-2 py-1.5 text-xs"
                     placeholder="key"
                   />
                   <input
                     type="text"
                     value={m.label}
                     onChange={(e) => updateMetric(i, { label: e.target.value })}
-                    className="col-span-4 rounded border border-neutral-700 bg-neutral-900 px-2 py-1.5 text-xs outline-none focus:border-blue-500"
+                    className="input col-span-4 px-2 py-1.5 text-xs"
                     placeholder="Label"
                   />
                   <select
                     value={m.type}
                     onChange={(e) => updateMetric(i, { type: e.target.value as MetricType })}
-                    className="col-span-2 rounded border border-neutral-700 bg-neutral-900 px-2 py-1.5 text-xs outline-none focus:border-blue-500"
+                    className="select col-span-2 px-2 py-1.5 text-xs"
                   >
                     {METRIC_TYPES.map((t) => (
                       <option key={t.value} value={t.value}>
@@ -334,19 +335,19 @@ export default function SectionsPage() {
                       </option>
                     ))}
                   </select>
-                  <label className="col-span-2 flex items-center gap-1.5 text-xs text-neutral-400">
+                  <label className="col-span-2 flex items-center gap-1.5 text-xs text-fg-3">
                     <input
                       type="checkbox"
                       checked={m.required}
                       onChange={(e) => updateMetric(i, { required: e.target.checked })}
-                      className="accent-blue-600"
+                      className="accent-[#5E8BFF]"
                     />
                     wajib
                   </label>
                   <button
                     onClick={() => removeMetric(i)}
                     disabled={metrics.length === 1}
-                    className="col-span-1 text-neutral-500 hover:text-red-400 disabled:opacity-30"
+                    className="col-span-1 text-fg-3 hover:text-danger disabled:opacity-30"
                     title="Hapus metrik"
                   >
                     ✕
@@ -356,21 +357,21 @@ export default function SectionsPage() {
             </div>
           </div>
 
-          {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
-          {success && <p className="mt-3 text-sm text-teal-400">{success}</p>}
+          {error && <p className="mt-3 text-sm text-danger">{error}</p>}
+          {success && <p className="mt-3 text-sm text-ok">{success}</p>}
 
           <div className="mt-4 flex items-center gap-2">
             <button
               onClick={handleSubmit}
               disabled={submitting}
-              className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="btn-primary px-4 py-2.5"
             >
               {submitting ? "Menyimpan…" : editingId ? "Simpan perubahan" : "Buat section"}
             </button>
             {editingId && (
               <button
                 onClick={resetForm}
-                className="rounded-lg border border-neutral-700 px-4 py-2.5 text-sm text-neutral-300 hover:bg-neutral-800"
+                className="btn-ghost px-4 py-2.5"
               >
                 Batal edit
               </button>
@@ -379,48 +380,48 @@ export default function SectionsPage() {
         </div>
 
         {/* Daftar section */}
-        <div className="mt-6">
-          <h2 className="text-sm font-medium text-neutral-200">Daftar section</h2>
+        <div>
+          <h2 className="label-sm">Daftar section</h2>
           {loadingList ? (
-            <p className="mt-3 text-sm text-neutral-500">Memuat…</p>
+            <p className="mt-3 text-sm text-fg-3">Memuat…</p>
           ) : sections.length === 0 ? (
-            <p className="mt-3 text-sm text-neutral-500">Belum ada section.</p>
+            <p className="mt-3 text-sm text-fg-3">Belum ada section.</p>
           ) : (
             <div className="mt-3 space-y-3">
               {sections.map((s) => (
                 <div
                   key={s.id}
-                  className="rounded-xl border border-neutral-800 bg-neutral-900 p-4"
+                  className="card p-5"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="rounded bg-neutral-800 px-2 py-0.5 text-xs font-medium text-neutral-300">
+                        <span className="badge border border-line bg-surface-2 text-fg-2">
                           {s.platform === "shopee" ? "Shopee" : "TikTok"}
                         </span>
-                        <span className="text-xs text-neutral-500">#{s.narrativeOrder}</span>
+                        <span className="font-mono text-xs text-fg-3">#{s.narrativeOrder}</span>
                         <span
-                          className={`rounded px-2 py-0.5 text-xs font-medium ${
+                          className={`badge ${
                             s.status === "active"
-                              ? "bg-teal-500/15 text-teal-300"
-                              : "bg-amber-500/15 text-amber-300"
+                              ? "bg-ok/15 text-ok"
+                              : "bg-warn/15 text-warn"
                           }`}
                         >
                           {s.status === "active" ? "Aktif" : "Draft"}
                         </span>
                         {s.usesPeriodComparison && (
-                          <span className="rounded bg-blue-500/15 px-2 py-0.5 text-xs font-medium text-blue-300">
+                          <span className="badge bg-accent/15 text-accent-hi">
                             Perbandingan periode
                           </span>
                         )}
                       </div>
-                      <h3 className="mt-1.5 truncate text-sm font-medium text-neutral-100">
+                      <h3 className="mt-1.5 truncate text-sm font-medium text-fg">
                         {s.name}
                       </h3>
-                      <p className="mt-0.5 text-xs text-neutral-500">
+                      <p className="mt-0.5 text-xs text-fg-3">
                         {s.metrics.length} metrik
                         {s.metrics.length > 0 && (
-                          <span className="text-neutral-600">
+                          <span className="text-fg-3">
                             {" — "}
                             {s.metrics.map((m) => m.key).join(", ")}
                           </span>
@@ -430,13 +431,13 @@ export default function SectionsPage() {
                     <div className="flex shrink-0 gap-2">
                       <button
                         onClick={() => startEdit(s)}
-                        className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800"
+                        className="btn-ghost px-3 py-1.5 text-xs"
                       >
                         Edit
                       </button>
                       <button
                         onClick={() => handleDelete(s)}
-                        className="rounded-lg border border-red-500/30 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10"
+                        className="btn-danger px-3 py-1.5 text-xs"
                       >
                         Hapus
                       </button>
@@ -446,6 +447,7 @@ export default function SectionsPage() {
               ))}
             </div>
           )}
+        </div>
         </div>
       </div>
     </div>

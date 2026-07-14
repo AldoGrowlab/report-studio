@@ -80,50 +80,51 @@ export default function UsersPage() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100">
-      <div className="mx-auto max-w-3xl px-6 py-10">
+    <div className="min-h-screen bg-ink text-fg">
+      <div className="mx-auto max-w-5xl px-6 py-12">
         <button
           onClick={() => router.push("/dashboard")}
-          className="text-sm text-neutral-400 hover:text-neutral-200"
+          className="text-sm text-fg-3 transition-colors hover:text-fg"
         >
           ← Kembali ke dashboard
         </button>
 
-        <h1 className="mt-4 text-2xl font-semibold">Kelola user</h1>
-        <p className="mt-1 text-sm text-neutral-400">
+        <h1 className="mt-6 text-2xl font-semibold tracking-tight">Kelola user</h1>
+        <p className="mt-1.5 text-sm text-fg-3">
           Buat akun baru untuk operator atau founder. Akun yang dibuat bisa langsung login.
         </p>
 
+        <div className="mt-7 grid items-start gap-6 lg:grid-cols-5">
         {/* Form tambah user */}
-        <div className="mt-6 rounded-xl border border-neutral-800 bg-neutral-900 p-5">
-          <h2 className="text-sm font-medium text-neutral-200">Tambah user baru</h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="card p-6 lg:col-span-2">
+          <h2 className="label-sm">Tambah user baru</h2>
+          <div className="mt-4 grid gap-4">
             <div>
-              <label className="block text-xs font-medium text-neutral-400 mb-1.5">Email</label>
+              <label className="label-sm mb-1.5 block">Email</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                className="input w-full"
                 placeholder="operator@contoh.com"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-neutral-400 mb-1.5">Password</label>
+              <label className="label-sm mb-1.5 block">Password</label>
               <input
                 type="text"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                className="input w-full"
                 placeholder="minimal 6 karakter"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-neutral-400 mb-1.5">Peran</label>
+              <label className="label-sm mb-1.5 block">Peran</label>
               <select
                 value={role}
                 onChange={(e) => setRole(e.target.value as "user" | "founder")}
-                className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                className="input w-full"
               >
                 <option value="user">Operator</option>
                 <option value="founder">Founder</option>
@@ -131,38 +132,38 @@ export default function UsersPage() {
             </div>
           </div>
 
-          {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
-          {success && <p className="mt-3 text-sm text-teal-400">{success}</p>}
+          {error && <p className="mt-3 text-sm text-danger">{error}</p>}
+          {success && <p className="mt-3 text-sm text-ok">{success}</p>}
 
           <button
             onClick={handleCreate}
             disabled={submitting}
-            className="mt-4 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+            className="mt-4 btn-primary px-4 py-2.5"
           >
             {submitting ? "Membuat…" : "Buat user"}
           </button>
         </div>
 
         {/* Daftar user */}
-        <div className="mt-6">
-          <h2 className="text-sm font-medium text-neutral-200">Daftar user</h2>
+        <div className="lg:col-span-3">
+          <h2 className="label-sm">Daftar user</h2>
           {loadingList ? (
-            <p className="mt-3 text-sm text-neutral-500">Memuat…</p>
+            <p className="mt-3 text-sm text-fg-3">Memuat…</p>
           ) : (
-            <div className="mt-3 overflow-hidden rounded-xl border border-neutral-800">
+            <div className="mt-3 card overflow-hidden">
               <table className="w-full text-sm">
-                <thead className="bg-neutral-900 text-neutral-400">
+                <thead className="bg-surface-2/60 text-fg-3">
                   <tr>
-                    <th className="px-4 py-2.5 text-left font-medium">Email</th>
-                    <th className="px-4 py-2.5 text-left font-medium">Peran</th>
+                    <th className="label-sm px-4 py-3 text-left">Email</th>
+                    <th className="label-sm px-4 py-3 text-left">Peran</th>
                   </tr>
                 </thead>
                 <tbody>
                   {users.map((u) => (
-                    <tr key={u.id} className="border-t border-neutral-800">
-                      <td className="px-4 py-2.5 text-neutral-200">{u.email}</td>
+                    <tr key={u.id} className="border-t border-line">
+                      <td className="px-4 py-2.5 text-fg-2">{u.email}</td>
                       <td className="px-4 py-2.5">
-                        <span className={`rounded px-2 py-0.5 text-xs font-medium ${u.role === "founder" ? "bg-blue-500/15 text-blue-300" : "bg-teal-500/15 text-teal-300"}`}>
+                        <span className={`badge ${u.role === "founder" ? "bg-accent/15 text-accent-hi" : "bg-ok/15 text-ok"}`}>
                           {u.role === "founder" ? "Founder" : "Operator"}
                         </span>
                       </td>
@@ -172,6 +173,7 @@ export default function UsersPage() {
               </table>
             </div>
           )}
+        </div>
         </div>
       </div>
     </div>

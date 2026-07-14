@@ -37,21 +37,21 @@ function ColorInput({
 }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-neutral-400">{label}</label>
-      {hint && <p className="mt-0.5 text-[10px] text-neutral-600">{hint}</p>}
+      <label className="label-sm block">{label}</label>
+      {hint && <p className="mt-1 text-[10px] text-fg-3">{hint}</p>}
       <div className="mt-1 flex items-center gap-2">
         <input
           type="color"
           value={`#${/^[0-9A-Fa-f]{6}$/.test(value) ? value : "000000"}`}
           onChange={(e) => onChange(e.target.value.slice(1).toUpperCase())}
-          className="h-9 w-12 cursor-pointer rounded border border-neutral-700 bg-neutral-950"
+          className="h-9 w-12 cursor-pointer rounded-[8px] border border-line bg-ink"
         />
         <input
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value.replace(/^#/, "").toUpperCase())}
           maxLength={6}
-          className="w-24 rounded-lg border border-neutral-700 bg-neutral-950 px-2 py-2 font-mono text-xs text-neutral-100 outline-none focus:border-blue-500"
+          className="input w-24 px-2 py-2 font-mono text-xs"
         />
       </div>
     </div>
@@ -149,26 +149,26 @@ export default function ThemePage() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100">
-      <div className="mx-auto max-w-3xl px-6 py-10">
+    <div className="min-h-screen bg-ink text-fg">
+      <div className="mx-auto max-w-5xl px-6 py-12">
         <button
           onClick={() => router.push("/dashboard")}
-          className="text-sm text-neutral-400 hover:text-neutral-200"
+          className="text-sm text-fg-3 transition-colors hover:text-fg"
         >
           ← Dashboard
         </button>
-        <h1 className="mt-4 text-2xl font-semibold">Tema Bulanan</h1>
-        <p className="mt-1 text-sm text-neutral-400">
+        <h1 className="mt-6 text-2xl font-semibold tracking-tight">Tema Bulanan</h1>
+        <p className="mt-1.5 text-sm text-fg-3">
           Satu tema aktif untuk semua report. Perubahan langsung dipakai saat generate PPT
           berikutnya — termasuk report lama (PPT selalu dirakit dengan tema aktif).
         </p>
 
         {!theme ? (
-          <p className="mt-8 text-sm text-neutral-500">Memuat…</p>
+          <p className="mt-8 text-sm text-fg-3">Memuat…</p>
         ) : (
-          <div className="mt-8 space-y-6">
-            <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-5">
-              <h2 className="text-sm font-medium text-neutral-200">Warna</h2>
+          <div className="mt-8 grid items-start gap-5 lg:grid-cols-2">
+            <div className="card p-6">
+              <h2 className="label-sm">Warna</h2>
               <div className="mt-3 grid gap-4 sm:grid-cols-3">
                 <ColorInput
                   label="Primer"
@@ -195,13 +195,13 @@ export default function ThemePage() {
                   type="checkbox"
                   checked={theme.accentOverride}
                   onChange={(e) => patch({ accentOverride: e.target.checked })}
-                  className="mt-0.5 accent-blue-500"
+                  className="mt-0.5 accent-[#5E8BFF]"
                 />
                 <span>
-                  <span className="block text-sm text-neutral-200">
+                  <span className="block text-sm text-fg-2">
                     Override aksen per platform
                   </span>
-                  <span className="mt-0.5 block text-xs text-neutral-500">
+                  <span className="mt-0.5 block text-xs text-fg-3">
                     Blok Shopee dan TikTok memakai aksen masing-masing (bukan aksen dasar).
                   </span>
                 </span>
@@ -222,18 +222,18 @@ export default function ThemePage() {
               )}
             </div>
 
-            <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-5">
-              <h2 className="text-sm font-medium text-neutral-200">Font</h2>
-              <p className="mt-0.5 text-xs text-neutral-500">
+            <div className="card p-6">
+              <h2 className="label-sm">Font</h2>
+              <p className="mt-1 text-xs text-fg-3">
                 Daftar font yang aman dibuka di PowerPoint Windows & Mac tanpa embed.
               </p>
               <div className="mt-3 grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="block text-xs font-medium text-neutral-400">Judul</label>
+                  <label className="label-sm block">Judul</label>
                   <select
                     value={theme.headingFont}
                     onChange={(e) => patch({ headingFont: e.target.value })}
-                    className="mt-1 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                    className="select mt-1.5 w-full"
                   >
                     {SAFE_FONTS.map((f) => (
                       <option key={f} value={f}>
@@ -243,11 +243,11 @@ export default function ThemePage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-neutral-400">Body</label>
+                  <label className="label-sm block">Body</label>
                   <select
                     value={theme.bodyFont}
                     onChange={(e) => patch({ bodyFont: e.target.value })}
-                    className="mt-1 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                    className="select mt-1.5 w-full"
                   >
                     {SAFE_FONTS.map((f) => (
                       <option key={f} value={f}>
@@ -259,9 +259,9 @@ export default function ThemePage() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-5">
-              <h2 className="text-sm font-medium text-neutral-200">Logo</h2>
-              <p className="mt-0.5 text-xs text-neutral-500">
+            <div className="card p-6">
+              <h2 className="label-sm">Logo</h2>
+              <p className="mt-1 text-xs text-fg-3">
                 Muncul di cover PPT. Tanpa logo juga tidak apa-apa.
               </p>
               <div className="mt-3 flex items-center gap-4">
@@ -270,15 +270,15 @@ export default function ThemePage() {
                   <img
                     src={`/api/theme/logo?v=${logoVersion}`}
                     alt="Logo"
-                    className="h-16 max-w-40 rounded-lg border border-neutral-800 bg-white object-contain p-1.5"
+                    className="h-16 max-w-40 rounded-[10px] border border-line bg-white object-contain p-1.5"
                   />
                 ) : (
-                  <div className="flex h-16 w-28 items-center justify-center rounded-lg border border-dashed border-neutral-700 text-[10px] text-neutral-600">
+                  <div className="flex h-16 w-28 items-center justify-center rounded-[10px] border border-dashed border-line-2 text-[10px] text-fg-3">
                     belum ada logo
                   </div>
                 )}
                 <div className="flex flex-col gap-2">
-                  <label className="cursor-pointer rounded-lg border border-neutral-700 px-3 py-1.5 text-center text-xs text-neutral-200 hover:bg-neutral-800">
+                  <label className="btn-ghost cursor-pointer px-3 py-1.5 text-center text-xs">
                     {logoBusy ? "Memproses…" : theme.logoKey ? "Ganti logo" : "Unggah logo"}
                     <input
                       type="file"
@@ -296,7 +296,7 @@ export default function ThemePage() {
                     <button
                       onClick={removeLogo}
                       disabled={logoBusy}
-                      className="text-xs text-neutral-500 hover:text-red-400"
+                      className="text-xs text-fg-3 transition-colors hover:text-danger"
                     >
                       Hapus logo
                     </button>
@@ -305,9 +305,9 @@ export default function ThemePage() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-5">
-              <h2 className="text-sm font-medium text-neutral-200">Kontak (slide Thank You)</h2>
-              <p className="mt-0.5 text-xs text-neutral-500">
+            <div className="card p-6">
+              <h2 className="label-sm">Kontak (slide Thank You)</h2>
+              <p className="mt-1 text-xs text-fg-3">
                 Muncul di slide penutup report. Kosongkan yang tidak mau ditampilkan.
               </p>
               <div className="mt-3 grid gap-4 sm:grid-cols-3">
@@ -319,29 +319,29 @@ export default function ThemePage() {
                   ] as const
                 ).map(([field, label]) => (
                   <div key={field}>
-                    <label className="block text-xs font-medium text-neutral-400">{label}</label>
+                    <label className="label-sm block">{label}</label>
                     <input
                       type="text"
                       value={theme[field]}
                       onChange={(e) => patch({ [field]: e.target.value })}
-                      className="mt-1 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                      className="input mt-1.5 w-full"
                     />
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 lg:col-span-2">
               <button
                 onClick={save}
                 disabled={saving}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+                className="btn-primary px-4 py-2"
               >
                 {saving ? "Menyimpan…" : "Simpan tema"}
               </button>
               {message && (
                 <span
-                  className={`text-xs ${message.startsWith("Tersimpan") ? "text-teal-300" : "text-red-400"}`}
+                  className={`text-xs ${message.startsWith("Tersimpan") ? "text-ok" : "text-danger"}`}
                 >
                   {message}
                 </span>
