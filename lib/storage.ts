@@ -79,6 +79,11 @@ function createR2Storage(cfg: NonNullable<ReturnType<typeof r2Config>>): Storage
       region: "auto", // R2 mengabaikan region; "auto" sesuai dok R2
       endpoint: cfg.endpoint,
       credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey },
+      // AWS SDK v3 baru menambahkan checksum flexible (CRC32) secara default —
+      // Cloudflare R2 menolaknya dengan 400 InvalidArgument. Batasi checksum ke
+      // "hanya saat operasi mewajibkan" supaya kompatibel dengan R2.
+      requestChecksumCalculation: "WHEN_REQUIRED",
+      responseChecksumValidation: "WHEN_REQUIRED",
     });
   }
 
