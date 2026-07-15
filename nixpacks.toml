@@ -1,0 +1,13 @@
+# Nixpacks (Railway) — override fase install.
+#
+# Kenapa: env produksi menyetel NODE_ENV=production (WAJIB — K2/K3 memakainya untuk
+# gagal-keras kalau ANTHROPIC_API_KEY/R2 tak lengkap). Tapi npm membaca NODE_ENV=production
+# lalu MELEWATKAN devDependencies saat `npm ci` — padahal `next build` butuh devDeps
+# (@tailwindcss/postcss, tailwindcss, typescript). Akibatnya build gagal:
+# "Cannot find module '@tailwindcss/postcss'".
+#
+# --include=dev memaksa devDependencies tetap terpasang saat build, tanpa mengorbankan
+# NODE_ENV=production di runtime. Runtime image tetap membawa devDeps (konsekuensi wajar
+# Nixpacks single-stage) — yang penting build punya alatnya dan guard produksi tetap aktif.
+[phases.install]
+cmds = ["npm ci --include=dev"]
