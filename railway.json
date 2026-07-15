@@ -4,8 +4,8 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "sh -c 'n=1; until npx prisma migrate deploy; do if [ $n -ge 6 ]; then echo \"FATAL: prisma migrate deploy gagal setelah 6 percobaan. Lihat error Prisma di atas: P1001=DB tak terjangkau (cek service Postgres & environment sama), P1012=env DATABASE_URL belum diset di service ini.\"; exit 1; fi; echo \"migrate deploy gagal (lihat error di atas) — percobaan $n/6, ulang dalam 5s\"; n=$((n+1)); sleep 5; done; echo \"[start] Next.js listen di 0.0.0.0:${PORT:-3000}\"; exec npx next start -H 0.0.0.0 -p ${PORT:-3000}'",
+    "startCommand": "sh -c 'node scripts/diag-network.mjs || true; n=1; until npx prisma migrate deploy; do if [ $n -ge 3 ]; then echo \"FATAL: prisma migrate deploy gagal — lihat DIAGNOSTIK di atas.\"; exit 1; fi; echo \"migrate deploy gagal — percobaan $n/3, ulang dalam 5s\"; n=$((n+1)); sleep 5; done; echo \"[start] Next.js listen di 0.0.0.0:${PORT:-3000}\"; exec npx next start -H 0.0.0.0 -p ${PORT:-3000}'",
     "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 3
+    "restartPolicyMaxRetries": 1
   }
 }
