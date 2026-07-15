@@ -4,7 +4,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "npx prisma migrate deploy && npm run start",
+    "startCommand": "sh -c 'n=1; until npx prisma migrate deploy; do if [ $n -ge 6 ]; then echo \"FATAL: prisma migrate deploy gagal setelah 6 percobaan — cek DATABASE_URL & service Postgres\"; exit 1; fi; echo \"DB belum terjangkau (private network Railway butuh beberapa detik) — percobaan $n/6, ulang dalam 5s\"; n=$((n+1)); sleep 5; done; exec npm run start'",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 3
   }
