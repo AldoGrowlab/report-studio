@@ -16,7 +16,10 @@
       "Bash(npx prisma *)",
       "Bash(echo \"tsc exit: $?\")",
       "Bash(echo \"eslint exit: $?\")",
-      "Bash(pkill -f \"next dev\")"
+      "Bash(pkill -f \"next dev\")",
+      "Bash(curl *)",
+      "Bash(touch docs/.perm-test)",
+      "Bash(rm docs/.perm-test)"
     ]
   }
 }
