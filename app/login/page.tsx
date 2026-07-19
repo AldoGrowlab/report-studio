@@ -70,15 +70,17 @@ export default function LoginPage() {
         {/* ===== Brand ===== */}
         <div className="rs-rise">
           {/* Logo Growlab (putih via invert dari artwork hitam transparan) */}
-          <div className="flex items-center gap-3">
+          <div>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/growlab-logo.png"
               alt="Growlab"
-              className="h-14 w-auto"
+              className="h-28 w-auto sm:h-32"
               style={{ filter: "invert(1)" }}
             />
-            <span className="badge bg-accent/15 text-sm text-accent-hi">Internal Tools</span>
+            <span className="badge mt-5 inline-block bg-accent/15 text-sm text-accent-hi">
+              Internal Tools
+            </span>
           </div>
 
           <h1 className="mt-9 max-w-xl text-[2.75rem] font-semibold leading-[1.05] tracking-tight text-fg lg:text-6xl">
@@ -128,7 +130,6 @@ export default function LoginPage() {
             }}
           >
             <h2 className="text-2xl font-semibold tracking-tight text-fg">Masuk</h2>
-            <p className="mt-1.5 text-base text-fg-2">Pakai akun yang dibuatkan founder.</p>
 
             <div className="mt-8 space-y-5">
               <div>
