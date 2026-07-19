@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import LogoutButton from "./LogoutButton";
 
-// Ikon garis sederhana (non-interaktif, currentColor) — satu gaya untuk semua kartu menu.
+// Ikon garis sederhana (non-interaktif, currentColor) — warnanya diatur pemanggil.
 function MenuIcon({ name }: { name: string }) {
   const paths: Record<string, React.ReactNode> = {
     layers: (
@@ -52,7 +52,7 @@ function MenuIcon({ name }: { name: string }) {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.5"
+      strokeWidth="1.6"
       strokeLinecap="round"
       strokeLinejoin="round"
       className="h-5 w-5"
@@ -71,41 +71,48 @@ export default async function DashboardPage() {
 
   const isFounder = session.role === "founder";
 
+  // Tiap menu punya warna sendiri supaya ikon lebih hidup (warna = boleh diubah, sesuai izin).
   const founderMenu = [
     {
       label: "Section & KB",
       href: "/dashboard/sections",
       icon: "layers",
+      color: "#5E8BFF",
       desc: "Kelola section, KB analisa, dan metrik tiap platform.",
     },
     {
       label: "KB Validator",
       href: "/dashboard/validator-kb",
       icon: "shield",
+      color: "#34D399",
       desc: "Aturan merangkai narasi dan menulis kesimpulan.",
     },
     {
       label: "Tema bulanan",
       href: "/dashboard/theme",
       icon: "palette",
+      color: "#F5B84C",
       desc: "Warna, font, logo, dan kontak untuk PPT.",
     },
     {
       label: "Dashboard flag",
       href: "/dashboard/flags",
       icon: "flag",
+      color: "#F87171",
       desc: "Pantau flag lintas report — alat mempertajam KB.",
     },
     {
       label: "Generate report",
       href: "/dashboard/reports",
       icon: "report",
+      color: "#A78BFA",
       desc: "Buat report, unggah screenshot, hasilkan insight & PPT.",
     },
     {
       label: "Kelola user",
       href: "/dashboard/users",
       icon: "users",
+      color: "#22D3EE",
       desc: "Tambah akun founder dan operator tim.",
     },
   ];
@@ -114,6 +121,7 @@ export default async function DashboardPage() {
       label: "Generate report",
       href: "/dashboard/reports",
       icon: "report",
+      color: "#A78BFA",
       desc: "Buat report, unggah screenshot, hasilkan insight & PPT.",
     },
   ];
@@ -123,17 +131,17 @@ export default async function DashboardPage() {
     <div className="min-h-screen bg-ink text-fg">
       {/* Header ringkas selebar layar dengan garis hairline bawah */}
       <header className="border-b border-line">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3.5">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-line-2 bg-surface text-xs font-semibold tracking-tight text-fg">
               RS
             </div>
-            <span className="text-sm font-semibold tracking-tight">Report Studio</span>
+            <span className="text-base font-semibold tracking-tight">Report Studio</span>
           </div>
           <div className="flex items-center gap-3">
-            <span className="hidden text-xs text-fg-3 sm:block">{session.email}</span>
+            <span className="hidden text-sm text-fg-2 sm:block">{session.email}</span>
             <span
-              className={`badge ${isFounder ? "bg-accent/15 text-accent-hi" : "bg-ok/15 text-ok"}`}
+              className={`badge text-sm ${isFounder ? "bg-accent/15 text-accent-hi" : "bg-ok/15 text-ok"}`}
             >
               {isFounder ? "Founder" : "Operator"}
             </span>
@@ -142,37 +150,46 @@ export default async function DashboardPage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-6 py-12">
-        <h1 className="text-2xl font-semibold tracking-tight">
+      <main className="mx-auto max-w-6xl px-6 py-8">
+        <h1 className="text-xl font-semibold tracking-tight">
           {isFounder ? "Kendali penuh studio" : "Mulai kerjakan report"}
         </h1>
-        <p className="mt-1.5 text-sm text-fg-3">
+        <p className="mt-1 text-sm text-fg-2">
           {isFounder
             ? "Kamu melihat menu founder lengkap."
             : "Kamu melihat menu operator (hanya generate report)."}
         </p>
 
-        {/* Grid kartu menu — manfaatkan lebar layar, bukan tumpukan baris */}
-        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {/* Grid kartu menu — lebih compact (gap & padding rapat), ikon berwarna */}
+        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {menu.map((item) => (
             <a
               key={item.label}
               href={item.href ?? undefined}
-              className={`card group p-5 ${item.href ? "card-lift cursor-pointer" : "cursor-default opacity-60"}`}
+              className={`card group flex items-start gap-3.5 p-4 ${item.href ? "card-lift cursor-pointer" : "cursor-default opacity-60"}`}
             >
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-surface-2 text-fg-2 transition-colors duration-150 group-hover:border-accent/40 group-hover:text-accent-hi">
+              <div
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl"
+                style={{
+                  color: item.color,
+                  background: `color-mix(in srgb, ${item.color} 16%, transparent)`,
+                  boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${item.color} 30%, transparent)`,
+                }}
+              >
                 <MenuIcon name={item.icon} />
               </div>
-              <div className="mt-4 flex items-center justify-between">
-                <span className="text-sm font-medium text-fg">{item.label}</span>
-                <span
-                  aria-hidden
-                  className="text-fg-3 transition-all duration-150 group-hover:translate-x-0.5 group-hover:text-accent"
-                >
-                  →
-                </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-base font-medium text-fg">{item.label}</span>
+                  <span
+                    aria-hidden
+                    className="text-fg-3 transition-all duration-150 group-hover:translate-x-0.5 group-hover:text-accent"
+                  >
+                    →
+                  </span>
+                </div>
+                <p className="mt-0.5 text-sm leading-relaxed text-fg-2">{item.desc}</p>
               </div>
-              <p className="mt-1 text-xs leading-relaxed text-fg-3">{item.desc}</p>
             </a>
           ))}
         </div>
