@@ -10,6 +10,8 @@ import { parsePointLine, splitByNumbers } from "@/lib/insight-format";
 import {
   DEFAULT_THEME_COLORS,
   isDarkColor,
+  isSafeFont,
+  normalizeHexColor,
   resolveAccent,
   tint,
   type ThemeColors,
@@ -445,7 +447,7 @@ export function splitSectionPhotos(section: PptSection): PptSection[] {
 
 export async function buildReportPptx(
   data: PptReportData,
-  theme: PptTheme = DEFAULT_PPT_THEME
+  rawTheme: PptTheme = DEFAULT_PPT_THEME
 ): Promise<Buffer> {
   const { default: PptxGenJS } = await import("pptxgenjs");
   const pptx = new PptxGenJS();
@@ -453,6 +455,27 @@ export async function buildReportPptx(
 
   // Total slide dihitung DI MUKA (deterministik) untuk nomor halaman "n / total":
   // cover report (1) + per blok [pembatas + section + kesimpulan + rekomendasi?] + thank you (1).
+  // Jaring pengaman tema. Route /api/theme sudah memvalidasi, tapi builder ini juga
+  // dipanggil dari uji & skrip, dan warna tak valid akibatnya PARAH: `tint()` menghasilkan
+  // "NaN..." (pptxgenjs diam-diam memakai hitam) sementara `isDarkColor` mengembalikan
+  // false untuk NaN sehingga teks dipilih GELAP — teks gelap di atas latar hitam.
+  const theme: PptTheme = {
+    ...rawTheme,
+    primary: normalizeHexColor(rawTheme.primary) ?? DEFAULT_THEME_COLORS.primary,
+    secondary: normalizeHexColor(rawTheme.secondary) ?? DEFAULT_THEME_COLORS.secondary,
+    accent: normalizeHexColor(rawTheme.accent) ?? DEFAULT_THEME_COLORS.accent,
+    accentShopee: normalizeHexColor(rawTheme.accentShopee) ?? DEFAULT_THEME_COLORS.accentShopee,
+    accentTiktok: normalizeHexColor(rawTheme.accentTiktok) ?? DEFAULT_THEME_COLORS.accentTiktok,
+    // Nama font ditulis mentah ke atribut XML oleh pptxgenjs — "Font & Co" menghasilkan
+    // `&` telanjang yang membuat file tidak well-formed dan ditolak PowerPoint.
+    headingFont: isSafeFont(rawTheme.headingFont)
+      ? rawTheme.headingFont
+      : DEFAULT_THEME_COLORS.headingFont,
+    bodyFont: isSafeFont(rawTheme.bodyFont)
+      ? rawTheme.bodyFont
+      : DEFAULT_THEME_COLORS.bodyFont,
+  };
+
   // Pecah section berfoto banyak SEBELUM menghitung total halaman, supaya nomor "n / total"
   // ikut menghitung slide lanjutan (pageTotal memakai sections.length yang sama).
   // Rekomendasi = ketikan bebas user, panjangnya tak terbatas. Ukuran font dipilih dulu
@@ -618,14 +641,22 @@ export async function buildReportPptx(
           w: LEFT.w - 2 * PHOTO_PAD,
           h: CONTENT_H - 2 * PHOTO_PAD,
         };
+        const sectionHasPeriods = section.photos.some((ph) => ph.periodLabel !== null);
         const cellH = (inner.h - PHOTO_GAP * (n - 1)) / n;
         section.photos.forEach((photo, i) => {
           const cellY = inner.y + i * (cellH + PHOTO_GAP);
           // Caption = label bulan dari user kalau ada; kalau tidak, nomor "Sumber #n" dan
           // hanya saat sumbernya memang lebih dari satu. null = tanpa caption.
-          const caption =
-            photo.periodLabel ??
-            (section.multiSource ? `Sumber #${photo.sourceIndex}` : null);
+          // Kosakata caption diputuskan PER SECTION, bukan per foto: kalau ada satu saja
+          // foto berlabel bulan, foto lain yang tak berlabel TIDAK boleh jatuh ke
+          // "Sumber #n" — pembaca deck akan melihat dua sistem penamaan berdampingan
+          // ("Mei 2026" di sebelah "Sumber #2"). Bisa terjadi saat penanda perbandingan
+          // periode dinyalakan setelah section sudah punya foto.
+          const caption = sectionHasPeriods
+            ? (photo.periodLabel ?? "Tanpa periode")
+            : section.multiSource
+              ? `Sumber #${photo.sourceIndex}`
+              : null;
           const capH = caption ? CAPTION_H : 0;
           const rect = containRect(photo, {
             x: inner.x,
@@ -650,14 +681,19 @@ export async function buildReportPptx(
         });
       }
       if (section.missingPhotos > 0) {
+        // Kalau ada foto, notice jatuh DI ATAS kartu putih — warnanya harus warna teks
+        // kartu, bukan `onPrimarySubtle` (abu terang untuk latar gelap) yang praktis tak
+        // terbaca di putih. Posisinya juga ditarik ke dalam kartu supaya tidak menembus
+        // garis footer. Tanpa foto, tidak ada kartu -> pakai warna latar primer.
+        const onCard = n > 0;
         slide.addText(`${section.missingPhotos} foto tidak terbaca dari storage`, {
-          x: LEFT.x,
-          y: FOOTER_Y - 0.32,
-          w: LEFT.w,
+          x: LEFT.x + 0.15,
+          y: onCard ? CONTENT_Y + CONTENT_H - 0.42 : FOOTER_Y - 0.32,
+          w: LEFT.w - 0.3,
           h: 0.3,
           fontFace: theme.bodyFont,
           fontSize: SIZES.caption,
-          color: onPrimarySubtle(theme),
+          color: onCard ? theme.secondary : onPrimarySubtle(theme),
           italic: true,
         });
       }

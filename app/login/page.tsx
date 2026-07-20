@@ -148,7 +148,7 @@ export default function LoginPage() {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+                    onKeyDown={(e) => e.key === "Enter" && !loading && handleLogin()}
                     className="input w-full py-3 pl-11 text-base"
                     placeholder="email@contoh.com"
                   />
@@ -170,7 +170,7 @@ export default function LoginPage() {
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+                    onKeyDown={(e) => e.key === "Enter" && !loading && handleLogin()}
                     className="input w-full py-3 pl-11 text-base"
                     placeholder="••••••••"
                   />

@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+
+// Hash bcrypt cost 10 atas nilai acak — TIDAK pernah cocok dengan password apa pun.
+// Dipakai hanya untuk menyamakan waktu respons saat email tak terdaftar.
+const DUMMY_HASH = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
 import { createSession } from "@/lib/session";
 import {
   throttleDelayMs,
@@ -41,6 +45,11 @@ export async function POST(request: Request) {
   // Pesan error sengaja sama untuk email salah maupun password salah,
   // supaya tidak membocorkan email mana yang terdaftar.
   if (!user) {
+    // Tetap jalankan bcrypt terhadap hash boneka. Tanpa ini, email TAK TERDAFTAR dijawab
+    // seketika sementara email terdaftar membayar ~50-100 ms bcrypt — selisih yang cukup
+    // untuk memilah email mana yang benar-benar ada, lalu memfokuskan tebakan ke sana.
+    // Pesan errornya memang sudah disamakan; ini menyamakan WAKTUNYA.
+    await bcrypt.compare(password, DUMMY_HASH);
     recordFailure(key, Date.now());
     return NextResponse.json({ error: "Email atau password salah." }, { status: 401 });
   }

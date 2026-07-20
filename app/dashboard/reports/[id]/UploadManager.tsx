@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { missingPhotoSections, groupBySection, formatValueID } from "@/lib/uploads-view";
 import { parsePointLine, splitByNumbers } from "@/lib/insight-format";
@@ -372,6 +372,21 @@ export default function UploadManager({
     }
   }
 
+  // Cabut object URL pratinjau saat komponen dilepas. Tanpa ini, user yang memilih 20
+  // foto lalu berpindah halaman meninggalkan 20 blob tertahan di memori tab sampai
+  // reload penuh. Pakai ref supaya efeknya tidak jalan ulang tiap `pending` berubah.
+  const pendingRef = useRef<PendingItem[]>([]);
+  // Ref disinkronkan DI DALAM efek, bukan saat render (menulis ref saat render melanggar
+  // aturan React dan bisa membuat komponen tidak ter-update seperti seharusnya).
+  useEffect(() => {
+    pendingRef.current = pending;
+  }, [pending]);
+  useEffect(() => {
+    return () => {
+      for (const item of pendingRef.current) URL.revokeObjectURL(item.previewUrl);
+    };
+  }, []);
+
   // --- Lightbox: lihat foto ukuran penuh untuk cocokkan angka dgn hasil ekstraksi ---
   // Status per foto tersimpan (hapus / ubah periode): mencegah klik ganda dan memberi
   // pesan yang bisa dilihat user, bukan kegagalan senyap.
@@ -390,7 +405,7 @@ export default function UploadManager({
   const [extracting, setExtracting] = useState<Record<string, boolean>>({});
   const [extractError, setExtractError] = useState<Record<string, string>>({});
 
-  async function extractOne(uploadId: string) {
+  async function extractOne(uploadId: string): Promise<"ok" | "failed" | "unauthorized"> {
     // Ekstrak ulang MENGGANTI seluruh hasil — termasuk angka yang sudah
     // dikonfirmasi/dikoreksi manual. Minta persetujuan dulu supaya vetting tak hilang diam-diam.
     const target = saved.find((u) => u.id === uploadId);
@@ -400,7 +415,7 @@ export default function UploadManager({
         "Foto ini punya angka yang sudah dikonfirmasi/dikoreksi manual. Ekstrak ulang akan menghapus koreksi itu. Lanjutkan?"
       )
     ) {
-      return;
+      return "failed";
     }
     setExtracting((p) => ({ ...p, [uploadId]: true }));
     setExtractError((p) => ({ ...p, [uploadId]: "" }));
@@ -408,12 +423,12 @@ export default function UploadManager({
       const res = await fetch(`/api/uploads/${uploadId}/extract`, { method: "POST" });
       if (res.status === 403) {
         router.push("/login");
-        return;
+        return "unauthorized";
       }
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setExtractError((p) => ({ ...p, [uploadId]: data.error || `Ekstraksi gagal (kode ${res.status}).` }));
-        return;
+        return "failed";
       }
       setSaved((prev) =>
         prev.map((u) => (u.id === uploadId ? { ...u, extractions: data.extractions } : u))
@@ -422,17 +437,32 @@ export default function UploadManager({
       setManualFill((p) => ({ ...p, [uploadId]: false }));
       const up = saved.find((u) => u.id === uploadId);
       if (up) markStale(up.sectionId, up.platform);
+      return "ok";
     } catch {
       setExtractError((p) => ({ ...p, [uploadId]: "Kesalahan jaringan." }));
+      return "failed";
     } finally {
       setExtracting((p) => ({ ...p, [uploadId]: false }));
     }
   }
 
+  // Berhenti begitu sesi habis (dulu loop tetap menembak sisa foto yang semuanya akan
+  // 403 selagi navigasi ke /login berjalan), dan laporkan ringkasan agar user tak perlu
+  // menggulir seluruh daftar mencari mana yang gagal.
+  const [extractSummary, setExtractSummary] = useState("");
   async function extractAll() {
+    setExtractSummary("");
+    let ok = 0;
+    let failed = 0;
     for (const u of saved) {
-      await extractOne(u.id);
+      const res = await extractOne(u.id);
+      if (res === "unauthorized") return; // sesi habis — jangan lanjutkan
+      if (res === "ok") ok++;
+      else failed++;
     }
+    setExtractSummary(
+      failed === 0 ? `${ok} foto berhasil diekstrak.` : `${ok} berhasil, ${failed} gagal.`
+    );
   }
 
   // --- Konfirmasi & koreksi manual angka (Tahap 5) ---
@@ -772,7 +802,10 @@ export default function UploadManager({
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      // Ditunda: mencabut object URL pada tick yang sama dengan click() diketahui
+      // membatalkan unduhan di Safari/Firefox — file .pptx tak pernah tersimpan dan
+      // user tidak melihat error apa pun.
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch {
       setPptxError("Kesalahan jaringan saat mengunduh PPT.");
     } finally {
@@ -1022,6 +1055,11 @@ export default function UploadManager({
           <p className="mt-2 rounded-[10px] border border-danger/25 bg-danger/10 px-3 py-2 text-xs text-danger">
             {pptxError}
           </p>
+        )}
+        {/* Ringkasan "Ekstrak semua": tanpa ini user harus menggulir seluruh daftar
+            untuk menemukan foto mana yang gagal. */}
+        {extractSummary && (
+          <p className="mt-2 text-xs text-fg-3">{extractSummary}</p>
         )}
         {saved.length === 0 ? (
           <p className="mt-2 text-sm text-fg-3">Belum ada foto tersimpan.</p>

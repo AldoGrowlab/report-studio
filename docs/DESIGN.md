@@ -568,6 +568,22 @@ Sudah DIPERBAIKI (K = kritis, P = penting):
   > Jangan naikkan `LLM_MAX_TOKENS` di atas ~21.300: SDK menolak permintaan NON-streaming
   > yang perkiraan durasinya melewati 10 menit ("Streaming is required") — semua jalur LLM
   > akan gagal keras seketika. Kalau perlu keluaran lebih panjang, pindah ke streaming.
+- **Batch E5 audit (Jul 2026)** — pengerasan kecil:
+  caption diputuskan PER SECTION (satu foto berlabel bulan → foto lain jadi "Tanpa periode",
+  bukan bercampur dengan "Sumber #n"); notice "foto tidak terbaca" dipindah ke DALAM kartu
+  putih dengan warna teks kartu (dulu abu terang di atas putih, nyaris tak terbaca, dan
+  menembus garis footer); `buildReportPptx` menyanitasi warna & font tema sendiri
+  (`normalizeHexColor`/`isSafeFont`) — warna tak valid dulu menghasilkan `tint()` "NaN"
+  dan `isDarkColor` false sehingga teks GELAP dipilih di atas latar HITAM; `URL.revokeObjectURL`
+  unduh PPT ditunda 1 dtk (mencabut di tick yang sama dengan `click()` membatalkan unduhan
+  di Safari/Firefox); object URL pratinjau dicabut saat unmount; `extractAll` berhenti pada
+  403 dan melaporkan ringkasan berhasil/gagal; tombol Enter di login menghormati state
+  loading; `login-throttle` menyapu entri kedaluwarsa (Map dulu tumbuh tanpa batas karena
+  key `email|ip` dikendalikan pengirim); login menjalankan bcrypt atas hash boneka saat
+  email tak terdaftar — selisih waktu respons turun dari ~50-100 ms ke ~3 ms (terukur).
+  > Catatan: `pageTotal` untuk rekomendasi berisi spasi saja sudah benar dengan sendirinya
+  > sejak E1 (halaman rekomendasi dihitung dari hasil `trim()`), jadi tidak perlu perbaikan
+  > terpisah — diverifikasi ulang.
 - **P4** Hapus section/user ber-relasi → pre-check count = 409 berpesan (relasi RESTRICT =
   Postgres 23001 di-surface Prisma sbg UnknownRequestError, bukan P2003 — jangan andalkan
   kode error).
