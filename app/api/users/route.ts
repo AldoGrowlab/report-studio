@@ -39,7 +39,13 @@ export async function POST(request: Request) {
   if (!email || !password) {
     return NextResponse.json({ error: "Email dan password wajib diisi." }, { status: 400 });
   }
-  if (password.length < 6) {
+  // Divalidasi di SERVER: input type="email" di halaman Users berada di luar <form> dan
+  // dikirim lewat onClick, jadi validasi bawaan browser tak pernah dijalankan. Akibatnya
+  // akun ber-email salah ketik bisa terbuat dan tak bisa dipakai login.
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return NextResponse.json({ error: "Format email tidak valid." }, { status: 400 });
+  }
+  if (typeof password !== "string" || password.length < 6) {
     return NextResponse.json({ error: "Password minimal 6 karakter." }, { status: 400 });
   }
   if (role !== "founder" && role !== "user") {

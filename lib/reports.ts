@@ -3,6 +3,11 @@ import type { SessionData } from "@/lib/session";
 // Batas ukuran file upload (10 MB) — screenshot wajar di bawah ini.
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
+// Batas panjang teks bebas milik report. Keduanya ikut ke slide cover; brandName juga
+// ikut ke nama berkas unduhan (header Content-Disposition), jadi tak boleh tak terbatas.
+export const MAX_BRAND_NAME = 120;
+export const MAX_REPORT_PERIOD = 60;
+
 // Aturan akses report — MODEL B (keputusan user, audit pra-deploy Jul 2026):
 // SEMUA akun terautentikasi (founder & operator) boleh mengakses SEMUA report — buka,
 // upload, generate insight/kesimpulan/PPT, isi rekomendasi. Kepemilikan (createdById)

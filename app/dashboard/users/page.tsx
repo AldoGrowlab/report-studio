@@ -85,7 +85,7 @@ export default function UsersPage() {
         router.push("/login");
         return;
       }
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setRowError((p) => ({ ...p, [u.id]: data.error || "Gagal menghapus." }));
         return;
@@ -105,7 +105,7 @@ export default function UsersPage() {
       router.push("/login");
       return;
     }
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     setUsers(data.users || []);
     setLoadingList(false);
   }
@@ -120,7 +120,7 @@ export default function UsersPage() {
         router.push("/login");
         return;
       }
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       setUsers(data.users || []);
       setLoadingList(false);
     })();
@@ -136,7 +136,7 @@ export default function UsersPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, role }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(data.error || "Gagal membuat user.");
         setSubmitting(false);

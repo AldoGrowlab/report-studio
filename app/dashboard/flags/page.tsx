@@ -28,7 +28,7 @@ export default function FlagsPage() {
         router.push("/login");
         return;
       }
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       setFlags(data.flags || []);
       setLoading(false);
     })();

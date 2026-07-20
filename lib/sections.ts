@@ -64,6 +64,11 @@ export function parseSectionBody(body: unknown): ParseResult {
     if (!Number.isInteger(n)) {
       return { ok: false, error: "Narrative order harus berupa angka bulat." };
     }
+    // Kolomnya Int (int4 Postgres). Nilai di luar rentang lolos validasi lama lalu
+    // ditolak di lapisan DB sebagai 500 tanpa pesan — cukup salah ketik nol berlebih.
+    if (n < 0 || n > 9999) {
+      return { ok: false, error: "Narrative order harus antara 0 dan 9999." };
+    }
     narrativeOrder = n;
   }
 

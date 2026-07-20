@@ -37,7 +37,7 @@ export default function ValidatorKbPage() {
         router.push("/login");
         return;
       }
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       setKbs(data.kbs || []);
       setLoading(false);
     })();
@@ -64,7 +64,7 @@ export default function ValidatorKbPage() {
         router.push("/login");
         return;
       }
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setMessage((p) => ({ ...p, [row.platform]: data.error || "Gagal menyimpan." }));
         return;

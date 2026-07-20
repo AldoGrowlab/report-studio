@@ -50,7 +50,7 @@ export default function NewReportPage() {
         router.push("/login");
         return;
       }
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(data.error || "Gagal membuat report.");
         setSubmitting(false);
@@ -86,7 +86,10 @@ export default function NewReportPage() {
               type="text"
               value={brandName}
               onChange={(e) => setBrandName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+              onKeyDown={(e) =>
+                e.key === "Enter" && !submitting && platforms.length > 0 && handleCreate()
+              }
+              maxLength={120}
               className="input w-full"
               placeholder="mis. Toko Sepatu Aurora"
             />

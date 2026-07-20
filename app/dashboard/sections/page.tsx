@@ -69,7 +69,7 @@ export default function SectionsPage() {
       router.push("/login");
       return;
     }
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     setSections(data.sections || []);
     setLoadingList(false);
   }
@@ -84,7 +84,7 @@ export default function SectionsPage() {
         router.push("/login");
         return;
       }
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       setSections(data.sections || []);
       setLoadingList(false);
     })();
@@ -154,7 +154,7 @@ export default function SectionsPage() {
         router.push("/login");
         return;
       }
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(data.error || "Gagal menyimpan section.");
         setSubmitting(false);

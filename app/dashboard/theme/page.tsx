@@ -75,7 +75,7 @@ export default function ThemePage() {
         router.push("/login");
         return;
       }
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       setTheme(data.theme);
     })();
   }, [router]);
@@ -99,7 +99,7 @@ export default function ThemePage() {
         router.push("/login");
         return;
       }
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setMessage(data.error || "Gagal menyimpan tema.");
         return;
@@ -120,7 +120,7 @@ export default function ThemePage() {
     fd.append("file", file);
     try {
       const res = await fetch("/api/theme/logo", { method: "POST", body: fd });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setMessage(data.error || "Gagal mengunggah logo.");
         return;

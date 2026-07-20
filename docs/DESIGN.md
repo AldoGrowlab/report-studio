@@ -535,6 +535,18 @@ Sudah DIPERBAIKI (K = kritis, P = penting):
   terkecil dipecah ke slide "Rekomendasi & Action Plan (lanjutan)" — dihitung SEBELUM
   `pageTotal` sehingga penomoran halaman tetap benar. Kotak diisi maksimal `FILL_SAFETY`
   92% karena perkiraan lebar karakter tak pernah persis.
+- **Batch E2 audit (Jul 2026)** — validasi masukan API:
+  tipe diperiksa saat RUNTIME sebelum memanggil method string (`brandName: 123` dulu
+  menghasilkan 500 dengan body KOSONG, jadi klien tak menerima pesan apa pun); batas
+  panjang `brandName` 120 & `reportPeriod` 60 (keduanya ikut ke cover, brandName juga ke
+  nama berkas unduhan lewat Content-Disposition); `reportPeriod` menolak baris baru;
+  format email divalidasi di server (input `type="email"` di halaman Users ada di LUAR
+  `<form>` sehingga validasi browser tak pernah jalan); `narrativeOrder` dibatasi 0–9999
+  (di luar rentang int4 dulu jadi 500 dari lapisan DB); seluruh `res.json()` di semua
+  halaman client diberi `.catch(() => ({}))` — Batch D hanya menyentuh UploadManager.
+  > Batas yang diakui: pembatasan `reportPeriod` MEMPERSEMPIT ruang prompt injection ke
+  > Validator, tidak menutupnya — kalimat satu baris <60 karakter masih lewat. Memadai
+  > untuk alat internal dengan operator tepercaya; kalau berubah, ganti ke allowlist format.
 - **P4** Hapus section/user ber-relasi → pre-check count = 409 berpesan (relasi RESTRICT =
   Postgres 23001 di-surface Prisma sbg UnknownRequestError, bukan P2003 — jangan andalkan
   kode error).
