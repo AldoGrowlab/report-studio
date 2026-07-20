@@ -128,6 +128,11 @@ function containRect(
 ): { x: number; y: number; w: number; h: number } {
   const px = imageSizePx(img.bytes, img.contentType);
   const ratio = px ? px.w / px.h : 4 / 3;
+  // Jaring pengaman: kotak tak masuk akal (tinggi/lebar ≤ 0) TIDAK boleh menghasilkan
+  // geometri negatif — pptxgenjs menuliskannya apa adanya ke <a:ext>, dan cx/cy negatif
+  // melanggar ST_PositiveCoordinate sehingga PowerPoint menolak seluruh file ("repair").
+  if (box.w <= 0 || box.h <= 0) return { x: box.x, y: box.y, w: 0, h: 0 };
+
   let w = box.w;
   let h = w / ratio;
   if (h > box.h) {
@@ -321,6 +326,31 @@ function addPointsText(
   });
 }
 
+// Batas foto per slide. Diukur dari render nyata: 4 foto ≈ 1,4" per foto — masih terbaca;
+// 5 foto ≈ 0,86" sudah tidak; ≥12 foto membuat tinggi sel jatuh di bawah tinggi caption
+// sehingga geometrinya negatif dan file .pptx rusak. Section yang lebih banyak fotonya
+// dipecah ke slide lanjutan, bukan dijejalkan.
+const MAX_PHOTOS_PER_SLIDE = 4;
+
+// Satu section -> satu atau beberapa slide. Insight HANYA di slide pertama supaya klien
+// tidak membaca teks yang sama berulang; slide lanjutan berisi foto saja. missingPhotos
+// juga hanya dilaporkan sekali (di slide pertama) agar tidak terhitung ganda.
+export function splitSectionPhotos(section: PptSection): PptSection[] {
+  if (section.photos.length <= MAX_PHOTOS_PER_SLIDE) return [section];
+  const out: PptSection[] = [];
+  for (let i = 0; i < section.photos.length; i += MAX_PHOTOS_PER_SLIDE) {
+    const first = i === 0;
+    out.push({
+      name: first ? section.name : `${section.name} (lanjutan)`,
+      insight: first ? section.insight : null,
+      photos: section.photos.slice(i, i + MAX_PHOTOS_PER_SLIDE),
+      multiSource: section.multiSource,
+      missingPhotos: first ? section.missingPhotos : 0,
+    });
+  }
+  return out;
+}
+
 export async function buildReportPptx(
   data: PptReportData,
   theme: PptTheme = DEFAULT_PPT_THEME
@@ -331,9 +361,16 @@ export async function buildReportPptx(
 
   // Total slide dihitung DI MUKA (deterministik) untuk nomor halaman "n / total":
   // cover report (1) + per blok [pembatas + section + kesimpulan + rekomendasi?] + thank you (1).
+  // Pecah section berfoto banyak SEBELUM menghitung total halaman, supaya nomor "n / total"
+  // ikut menghitung slide lanjutan (pageTotal memakai sections.length yang sama).
+  const blocks = data.blocks.map((b) => ({
+    ...b,
+    sections: b.sections.flatMap(splitSectionPhotos),
+  }));
+
   const pageTotal =
     1 +
-    data.blocks.reduce(
+    blocks.reduce(
       (n, b) => n + 1 + b.sections.length + 1 + (b.recommendation ? 1 : 0),
       0
     ) +
@@ -401,7 +438,7 @@ export async function buildReportPptx(
     }
   );
   cover.addText(
-    data.blocks.map((b) => PLATFORM_LABEL[b.platform].toUpperCase()).join("  ·  "),
+    blocks.map((b) => PLATFORM_LABEL[b.platform].toUpperCase()).join("  ·  "),
     {
       x: MARGIN,
       y: COVER_BAND_Y + COVER_BAND_H + 0.4,
@@ -415,7 +452,7 @@ export async function buildReportPptx(
     }
   );
 
-  for (const block of data.blocks) {
+  for (const block of blocks) {
     const platformLabel = PLATFORM_LABEL[block.platform];
     const accent = resolveAccent(theme, block.platform);
     const footerLabel = `Laporan ${platformLabel} · ${data.reportPeriod}`;

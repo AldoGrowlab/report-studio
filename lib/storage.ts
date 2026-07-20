@@ -119,11 +119,28 @@ function createR2Storage(cfg: NonNullable<ReturnType<typeof r2Config>>): Storage
         // transformToByteArray tersedia di stream body SDK v3.
         const bytes = await res.Body.transformToByteArray();
         return { bytes, contentType: res.ContentType ?? contentTypeForKey(key) };
-      } catch {
-        return null;
+      } catch (e) {
+        // HANYA "objek tidak ada" yang sah dijawab null (foto memang hilang — pemanggil
+        // mencatatnya sebagai missingPhotos dan report tetap selesai, Prinsip #3).
+        // Kegagalan lain (kredensial dirotasi, jaringan, bucket salah) WAJIB dilempar:
+        // kalau ikut jadi null, gangguan R2 menyamar sebagai "foto belum diunggah" dan
+        // PPT terkirim tanpa satu pun foto dengan HTTP 200 (temuan audit Batch B).
+        if (isNotFoundError(e)) return null;
+        throw e;
       }
     },
   };
+}
+
+// "Objek tidak ada" pada S3/R2 muncul dalam beberapa bentuk tergantung operasi:
+// NoSuchKey (GetObject), NotFound (HeadObject), atau HTTP 404 tanpa nama error.
+function isNotFoundError(e: unknown): boolean {
+  const err = e as { name?: string; $metadata?: { httpStatusCode?: number } };
+  return (
+    err?.name === "NoSuchKey" ||
+    err?.name === "NotFound" ||
+    err?.$metadata?.httpStatusCode === 404
+  );
 }
 
 // ---- Disk lokal (fallback dev) ----

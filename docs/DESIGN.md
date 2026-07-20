@@ -379,7 +379,10 @@ fotonya belum ada.
   `lib/ppt.ts`. Per blok platform (Shopee dulu): cover → slide per section (urut `narrativeOrder`;
   section masuk = yang punya upload; foto EMBEDDED di kiri — semua foto section satu slide, caption
   = label bulan user ("Juni 2026") bila section memakai perbandingan periode, selain itu
-  "Sumber #n" saat >1; insight di kanan sebagai bullet list dengan ANGKA METRIK BOLD via run
+  "Sumber #n" saat >1; MAKS 4 foto per slide — selebihnya dipecah ke slide "(lanjutan)"
+  dengan insight HANYA di slide pertama (Jul 2026: 5 foto sudah ≈0,86" dan tak terbaca;
+  ≥12 foto membuat tinggi sel jatuh di bawah caption → geometri negatif → .pptx RUSAK);
+  insight di kanan sebagai bullet list dengan ANGKA METRIK BOLD via run
   pptxgenjs — pencocokan kode terhadap `Insight.numbers`, bukan penanda LLM; kosong bila belum
   ada) → slide "Kesimpulan"
   KOSONG (slot Validator Tahap 7). Unduh dari halaman report (GET `/api/reports/[id]/pptx`),
@@ -478,6 +481,18 @@ Sudah DIPERBAIKI (K = kritis, P = penting):
   Tanpa itu layar tetap tampak segar sesudah koreksi angka, dialog peringatan sebelum Unduh
   PPT tak pernah menyala, dan deck terkirim dengan narasi lama — tidak ada `router.refresh()`
   di aplikasi ini, jadi tak ada mekanisme pemulih lain selain reload manual.
+- **Batch B audit (Jul 2026)** — empat cara output rusak/hilang tanpa sinyal:
+  (a) blok platform hanya dilewati bila BENAR-BENAR kosong (tanpa foto DAN tanpa kesimpulan
+  DAN tanpa rekomendasi) — dulu cukup "tanpa foto", sehingga rekomendasi platform yang
+  tersimpan 200 lenyap dari deck dan sampul cuma menulis satu platform;
+  (b) `containRect` menolak kotak ≤0 → geometri negatif tak pernah lolos ke pptxgenjs;
+  (c) unggah foto & logo memverifikasi MAGIC BYTES lewat `imageSizePx`, bukan Content-Type
+  kiriman client — file teks/PDF ber-`type=image/png` dulu diterima 201 lalu tertanam ke
+  deck sebagai .png rusak tanpa error di titik mana pun;
+  (d) `storage.read()` hanya mengembalikan null untuk "objek tidak ada"; gangguan R2 nyata
+  (kredensial/jaringan/bucket) DILEMPAR → route pptx membalas 502 berpesan dan status report
+  TIDAK maju ke `downloaded`. Dulu semua error jadi null, jadi gangguan R2 menyamar sebagai
+  "foto belum diunggah" dan deck kosong terkirim dengan HTTP 200.
 - **P4** Hapus section/user ber-relasi → pre-check count = 409 berpesan (relasi RESTRICT =
   Postgres 23001 di-surface Prisma sbg UnknownRequestError, bukan P2003 — jangan andalkan
   kode error).

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
+import { imageSizePx } from "@/lib/image-size";
 import { getSession } from "@/lib/session";
 import { MAX_UPLOAD_BYTES } from "@/lib/reports";
 import { getStorage, isAllowedImageType, extForMime } from "@/lib/storage";
@@ -47,6 +48,17 @@ export async function POST(request: Request) {
 
   const key = `theme/logo-${randomUUID()}.${extForMime(file.type)}`;
   const bytes = new Uint8Array(await file.arrayBuffer());
+  // Verifikasi ISI file, bukan cuma Content-Type kiriman client (yang dikendalikan
+  // sepenuhnya oleh pengirim). Tanpa ini, file teks/PDF ber-"type=image/png" diterima 201
+  // lalu tertanam ke deck sebagai .png rusak tanpa error di titik mana pun — terbukti di
+  // uji E2E. imageSizePx membaca magic bytes dan mengembalikan null bila header tidak
+  // cocok dengan tipe yang diklaim.
+  if (imageSizePx(bytes, file.type) === null) {
+    return NextResponse.json(
+      { error: "File ini bukan gambar yang valid. Unggah logo (PNG/JPG/WEBP/GIF)." },
+      { status: 400 }
+    );
+  }
   await getStorage().put(key, bytes, file.type);
 
   const theme = await getOrCreateTheme();

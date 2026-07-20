@@ -57,7 +57,22 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/reports/[id
   const blocks: PptBlock[] = [];
   for (const platform of ["shopee", "tiktok"] as const) {
     const uploads = report.uploads.filter((u) => u.platform === platform);
-    if (uploads.length === 0) continue;
+
+    // Kesimpulan Validator platform ini (Tahap 7a) — belum ada = slot placeholder.
+    const conclusionRow = report.conclusions.find((c) => c.platform === platform);
+    const conclusion = conclusionRow
+      ? { points: conclusionRow.points, numbers: conclusionRow.numbers }
+      : null;
+
+    // Rekomendasi manual user (Fase A) — kosong/absen = slide dilewati (null).
+    const recoRow = report.recommendations.find((r) => r.platform === platform);
+    const recommendation =
+      recoRow && recoRow.content.trim().length > 0 ? recoRow.content : null;
+
+    // Blok dilewati HANYA kalau benar-benar kosong. Dulu cukup "tanpa foto" — akibatnya
+    // kesimpulan & rekomendasi platform yang belum ada fotonya hilang dari deck tanpa
+    // peringatan apa pun, padahal API menyimpannya dengan 200 (temuan audit Batch B).
+    if (uploads.length === 0 && !conclusion && !recommendation) continue;
 
     // Section masuk PPT = yang punya upload; urut narrativeOrder (section non-aktif yang
     // masih punya upload tetap ikut, di belakang — perilaku groupBySection yang sama dgn UI).
@@ -73,7 +88,22 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/reports/[id
       for (let i = 0; i < g.items.length; i++) {
         const u = g.items[i];
         // Foto disematkan (embedded) supaya file mandiri — Prinsip #5: foto asli wajib tampil.
-        const image = await storage.read(u.imageUrl);
+        // storage.read() melempar untuk gangguan NYATA (kredensial/jaringan/bucket) dan
+        // hanya mengembalikan null kalau objeknya memang tidak ada. Gangguan tidak boleh
+        // diperlakukan sebagai "foto belum diunggah": lebih baik gagal terang-terangan
+        // daripada mengirim deck tanpa foto — dan status report TIDAK maju ke downloaded.
+        let image;
+        try {
+          image = await storage.read(u.imageUrl);
+        } catch {
+          return NextResponse.json(
+            {
+              error:
+                "Gagal membaca foto dari storage. Ini gangguan penyimpanan, bukan foto yang hilang — coba lagi sebentar lagi.",
+            },
+            { status: 502 }
+          );
+        }
         if (!image) {
           // Foto hilang di storage: catat & lanjut — report selalu selesai (Prinsip #3).
           missingPhotos++;
@@ -96,17 +126,6 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/reports/[id
         missingPhotos,
       });
     }
-    // Kesimpulan Validator platform ini (Tahap 7a) — belum ada = slot placeholder.
-    const conclusionRow = report.conclusions.find((c) => c.platform === platform);
-    const conclusion = conclusionRow
-      ? { points: conclusionRow.points, numbers: conclusionRow.numbers }
-      : null;
-
-    // Rekomendasi manual user (Fase A) — kosong/absen = slide dilewati (null).
-    const recoRow = report.recommendations.find((r) => r.platform === platform);
-    const recommendation =
-      recoRow && recoRow.content.trim().length > 0 ? recoRow.content : null;
-
     blocks.push({ platform, sections, conclusion, recommendation });
   }
 

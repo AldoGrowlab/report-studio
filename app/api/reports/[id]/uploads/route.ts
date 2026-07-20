@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { imageSizePx } from "@/lib/image-size";
 import { getSession } from "@/lib/session";
 import { canAccessReport, MAX_UPLOAD_BYTES } from "@/lib/reports";
 import { getStorage, isAllowedImageType, buildImageKey } from "@/lib/storage";
@@ -103,6 +104,17 @@ export async function POST(request: Request, ctx: RouteContext<"/api/reports/[id
   // Simpan file ke storage (R2 atau disk lokal), lalu catat ke tabel Upload.
   const key = buildImageKey(reportId, file.type);
   const bytes = new Uint8Array(await file.arrayBuffer());
+  // Verifikasi ISI file, bukan cuma Content-Type kiriman client (yang dikendalikan
+  // sepenuhnya oleh pengirim). Tanpa ini, file teks/PDF ber-"type=image/png" diterima 201
+  // lalu tertanam ke deck sebagai .png rusak tanpa error di titik mana pun — terbukti di
+  // uji E2E. imageSizePx membaca magic bytes dan mengembalikan null bila header tidak
+  // cocok dengan tipe yang diklaim.
+  if (imageSizePx(bytes, file.type) === null) {
+    return NextResponse.json(
+      { error: "File ini bukan gambar yang valid. Unggah screenshot asli (PNG/JPG/WEBP/GIF)." },
+      { status: 400 }
+    );
+  }
   await getStorage().put(key, bytes, file.type);
 
   let upload;
