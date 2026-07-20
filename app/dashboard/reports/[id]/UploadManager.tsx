@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { missingPhotoSections, groupBySection, formatValueID } from "@/lib/uploads-view";
 import { parsePointLine, splitByNumbers } from "@/lib/insight-format";
 import { monthOptions, formatMonthID } from "@/lib/period";
+import { MAX_UPLOAD_BYTES } from "@/lib/reports";
 
 type SectionOption = {
   id: string;
@@ -202,7 +203,13 @@ export default function UploadManager({
         periodMonth: "",
         isPrimaryPeriod: false,
         saving: false,
-        error: "",
+        // Ditolak sejak awal, bukan setelah user menunggu unggahan panjang selesai.
+        error:
+          file.size > MAX_UPLOAD_BYTES
+            ? `Ukuran ${(file.size / 1024 / 1024).toFixed(1)} MB melebihi batas 10 MB.`
+            : file.size === 0
+              ? "File kosong."
+              : "",
       })),
     ]);
     e.target.value = ""; // izinkan pilih file yang sama lagi
@@ -221,6 +228,7 @@ export default function UploadManager({
   }
 
   async function savePending(item: PendingItem) {
+    if (item.file.size > MAX_UPLOAD_BYTES || item.file.size === 0) return;
     if (!item.sectionId) {
       patchPending(item.localId, { error: "Pilih label section dulu." });
       return;
@@ -245,12 +253,13 @@ export default function UploadManager({
     try {
       const res = await fetch(`/api/reports/${reportId}/uploads`, { method: "POST", body: fd });
       if (res.status === 403) {
+        patchPending(item.localId, { saving: false });
         router.push("/login");
         return;
       }
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        patchPending(item.localId, { saving: false, error: data.error || "Gagal menyimpan." });
+        patchPending(item.localId, { saving: false, error: data.error || `Gagal menyimpan (kode ${res.status}).` });
         return;
       }
       // Pindah dari pending ke saved. Utama baru => utama lama section itu ikut ter-unset
@@ -285,18 +294,33 @@ export default function UploadManager({
     u: SavedUpload,
     patch: { periodMonth?: string; isPrimaryPeriod?: true }
   ) {
-    const res = await fetch(`/api/uploads/${u.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
-    });
+    setRowBusy((p) => ({ ...p, [u.id]: true }));
+    setRowError((p) => ({ ...p, [u.id]: "" }));
+    let res: Response;
+    let data: { upload?: { periodMonth?: string | null; isPrimaryPeriod?: boolean } } = {};
+    try {
+      res = await fetch(`/api/uploads/${u.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      data = await res.json().catch(() => ({}));
+    } catch {
+      setRowError((p) => ({ ...p, [u.id]: "Kesalahan jaringan — perubahan belum tersimpan." }));
+      setRowBusy((p) => ({ ...p, [u.id]: false }));
+      return;
+    }
+    setRowBusy((p) => ({ ...p, [u.id]: false }));
     if (res.status === 403) {
       router.push("/login");
       return;
     }
-    const data = await res.json();
     if (!res.ok) {
-      window.alert(data.error || "Gagal mengubah penanda periode.");
+      const err = (data as { error?: string }).error;
+      setRowError((p) => ({
+        ...p,
+        [u.id]: err || `Gagal mengubah penanda periode (kode ${res.status}).`,
+      }));
       return;
     }
     setSaved((prev) =>
@@ -304,8 +328,8 @@ export default function UploadManager({
         if (s.id === u.id) {
           return {
             ...s,
-            periodMonth: data.upload.periodMonth ?? s.periodMonth,
-            isPrimaryPeriod: Boolean(data.upload.isPrimaryPeriod),
+            periodMonth: data.upload?.periodMonth ?? s.periodMonth,
+            isPrimaryPeriod: Boolean(data.upload?.isPrimaryPeriod),
           };
         }
         // Utama baru meng-unset utama lama section yang sama (cermin transaksi server).
@@ -318,20 +342,42 @@ export default function UploadManager({
     markStale(u.sectionId, u.platform);
   }
 
+  // Dulu: tanpa cabang else, tanpa try/catch, tanpa guard. Kalau server balas 500, layar
+  // TIDAK berubah sama sekali dan user tidak punya cara tahu apakah tombolnya rusak atau
+  // servernya bermasalah — ia menekan Hapus berkali-kali tanpa hasil.
   async function deleteSaved(u: SavedUpload) {
     if (!window.confirm("Hapus foto ini dari report?")) return;
-    const res = await fetch(`/api/uploads/${u.id}`, { method: "DELETE" });
-    if (res.status === 403) {
-      router.push("/login");
-      return;
-    }
-    if (res.ok) {
+    setRowBusy((p) => ({ ...p, [u.id]: true }));
+    setRowError((p) => ({ ...p, [u.id]: "" }));
+    try {
+      const res = await fetch(`/api/uploads/${u.id}`, { method: "DELETE" });
+      if (res.status === 403) {
+        router.push("/login");
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setRowError((p) => ({
+          ...p,
+          [u.id]: data.error || `Gagal menghapus foto (kode ${res.status}).`,
+        }));
+        return;
+      }
       setSaved((prev) => prev.filter((p) => p.id !== u.id));
       markStale(u.sectionId, u.platform);
+    } catch {
+      setRowError((p) => ({ ...p, [u.id]: "Kesalahan jaringan — foto belum terhapus." }));
+    } finally {
+      setRowBusy((p) => ({ ...p, [u.id]: false }));
     }
   }
 
   // --- Lightbox: lihat foto ukuran penuh untuk cocokkan angka dgn hasil ekstraksi ---
+  // Status per foto tersimpan (hapus / ubah periode): mencegah klik ganda dan memberi
+  // pesan yang bisa dilihat user, bukan kegagalan senyap.
+  const [rowBusy, setRowBusy] = useState<Record<string, boolean>>({});
+  const [rowError, setRowError] = useState<Record<string, string>>({});
+
   const [lightbox, setLightbox] = useState<{ src: string; label: string } | null>(null);
   useEffect(() => {
     if (!lightbox) return;
@@ -364,9 +410,9 @@ export default function UploadManager({
         router.push("/login");
         return;
       }
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setExtractError((p) => ({ ...p, [uploadId]: data.error || "Ekstraksi gagal." }));
+        setExtractError((p) => ({ ...p, [uploadId]: data.error || `Ekstraksi gagal (kode ${res.status}).` }));
         return;
       }
       setSaved((prev) =>
@@ -426,9 +472,9 @@ export default function UploadManager({
         router.push("/login");
         return;
       }
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setEditError((p) => ({ ...p, [extractionId]: data.error || "Gagal menyimpan." }));
+        setEditError((p) => ({ ...p, [extractionId]: data.error || `Gagal menyimpan (kode ${res.status}).` }));
         return;
       }
       // Angka berubah -> insight & kesimpulan yang memakainya jadi basi.
@@ -497,9 +543,9 @@ export default function UploadManager({
         router.push("/login");
         return;
       }
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setInsightError((p) => ({ ...p, [sectionId]: data.error || "Generate insight gagal." }));
+        setInsightError((p) => ({ ...p, [sectionId]: data.error || `Generate insight gagal (kode ${res.status}).` }));
         return;
       }
       // Baru di-generate dari data terkini -> tidak basi.
@@ -525,6 +571,24 @@ export default function UploadManager({
   const [recoDraft, setRecoDraft] = useState<Record<string, string>>(() =>
     Object.fromEntries(initialRecommendations.map((r) => [r.platform, r.content]))
   );
+  // Nilai tersimpan terakhir, untuk mendeteksi ketikan yang belum disimpan. Rekomendasi
+  // adalah satu-satunya konten yang diketik manual di halaman ini — kehilangannya paling
+  // mahal, dan tombol Simpan ada di ATAS textarea sehingga mudah terlewat.
+  const [recoSaved, setRecoSaved] = useState<Record<string, string>>(() =>
+    Object.fromEntries(initialRecommendations.map((r) => [r.platform, r.content]))
+  );
+  const recoDirty = (platform: string) =>
+    (recoDraft[platform] ?? "") !== (recoSaved[platform] ?? "");
+
+  // Cegah kehilangan ketikan rekomendasi saat tab ditutup/di-reload. (Navigasi internal
+  // Next tidak memicu beforeunload — penanda "belum tersimpan" di atas yang menanganinya.)
+  const hasUnsavedReco = platforms.some((pf) => recoDirty(pf));
+  useEffect(() => {
+    if (!hasUnsavedReco) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [hasUnsavedReco]);
   const [recoSaving, setRecoSaving] = useState<Record<string, boolean>>({});
   const [recoMessage, setRecoMessage] = useState<Record<string, string>>({});
 
@@ -541,12 +605,13 @@ export default function UploadManager({
         router.push("/login");
         return;
       }
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setRecoMessage((p) => ({ ...p, [platform]: data.error || "Gagal menyimpan." }));
+        setRecoMessage((p) => ({ ...p, [platform]: data.error || `Gagal menyimpan (kode ${res.status}).` }));
         return;
       }
       setRecoDraft((p) => ({ ...p, [platform]: data.recommendation?.content ?? "" }));
+      setRecoSaved((p) => ({ ...p, [platform]: data.recommendation?.content ?? "" }));
       setRecoMessage((p) => ({
         ...p,
         [platform]: data.recommendation
@@ -617,11 +682,11 @@ export default function UploadManager({
         router.push("/login");
         return;
       }
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setConclusionError((p) => ({
           ...p,
-          [platform]: data.error || "Generate kesimpulan gagal.",
+          [platform]: data.error || `Generate kesimpulan gagal (kode ${res.status}).`,
         }));
         return;
       }
@@ -696,7 +761,7 @@ export default function UploadManager({
       }
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setPptxError(data.error || "Gagal menyiapkan PPT. Coba lagi.");
+        setPptxError(data.error || `Gagal menyiapkan PPT (kode ${res.status}). Coba lagi.`);
         return;
       }
       const blob = await res.blob();
@@ -1017,9 +1082,10 @@ export default function UploadManager({
                         </button>
                         <button
                           onClick={() => deleteSaved(u)}
-                          className="text-xs text-fg-3 hover:text-danger"
+                          disabled={rowBusy[u.id]}
+                          className="text-xs text-fg-3 hover:text-danger disabled:opacity-50"
                         >
-                          Hapus
+                          {rowBusy[u.id] ? "Menghapus…" : "Hapus"}
                         </button>
                       </div>
                     </div>
@@ -1034,7 +1100,8 @@ export default function UploadManager({
                             e.target.value &&
                             patchSavedPeriod(u, { periodMonth: e.target.value })
                           }
-                          className="select px-2 py-1 text-xs"
+                          disabled={rowBusy[u.id]}
+                          className="select px-2 py-1 text-xs disabled:opacity-50"
                         >
                           {!u.periodMonth && <option value="">— bulan? —</option>}
                           {monthOpts.map((m) => (
@@ -1057,14 +1124,18 @@ export default function UploadManager({
                         ) : (
                           <button
                             onClick={() => patchSavedPeriod(u, { isPrimaryPeriod: true })}
-                            className="rounded border border-line-2 px-2 py-0.5 text-[10px] text-fg-3 hover:bg-surface-2 hover:text-fg-2"
+                            disabled={rowBusy[u.id]}
+                            className="rounded border border-line-2 px-2 py-0.5 text-[10px] text-fg-3 hover:bg-surface-2 hover:text-fg-2 disabled:opacity-50"
                           >
-                            Jadikan utama
+                            {rowBusy[u.id] ? "Menyimpan…" : "Jadikan utama"}
                           </button>
                         )}
                       </div>
                     )}
 
+                    {rowError[u.id] && (
+                      <p className="mt-1 text-xs text-danger">{rowError[u.id]}</p>
+                    )}
                     {extractError[u.id] && (
                       <p className="mt-1 text-xs text-danger">{extractError[u.id]}</p>
                     )}
@@ -1412,6 +1483,9 @@ export default function UploadManager({
                 <div className="flex items-center justify-between gap-2">
                   <span className="label-sm">
                     Rekomendasi {label}
+                    {recoDirty(platform) && (
+                      <span className="ml-2 font-normal text-warn">• belum tersimpan</span>
+                    )}
                   </span>
                   <button
                     onClick={() => saveRecommendation(platform)}

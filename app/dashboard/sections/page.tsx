@@ -53,6 +53,9 @@ export default function SectionsPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Pesan kegagalan per baris section — terutama 409 "masih dipakai N foto" dari server,
+  // yang sebelumnya dibuang sehingga tombol Hapus tampak rusak tanpa penjelasan.
+  const [rowError, setRowError] = useState<Record<string, string>>({});
 
   // Pratinjau status: harus cocok dengan computeSectionStatus di server
   const filledMetrics = metrics.filter((m) => m.key.trim() && m.label.trim());
@@ -176,9 +179,18 @@ export default function SectionsPage() {
     if (!window.confirm(`Hapus section "${s.name}"? Tindakan ini tidak bisa dibatalkan.`)) {
       return;
     }
+    setRowError((p) => ({ ...p, [s.id]: "" }));
     const res = await fetch(`/api/sections/${s.id}`, { method: "DELETE" });
     if (res.status === 403) {
       router.push("/login");
+      return;
+    }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setRowError((p) => ({
+        ...p,
+        [s.id]: data.error || `Gagal menghapus section (kode ${res.status}).`,
+      }));
       return;
     }
     if (editingId === s.id) resetForm();
@@ -442,6 +454,9 @@ export default function SectionsPage() {
                         Hapus
                       </button>
                     </div>
+                    {rowError[s.id] && (
+                      <p className="mt-2 text-right text-xs text-danger">{rowError[s.id]}</p>
+                    )}
                   </div>
                 </div>
               ))}

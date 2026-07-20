@@ -511,6 +511,19 @@ Sudah DIPERBAIKI (K = kritis, P = penting):
   Halaman detail juga memakai penanda basi sehingga foto tambahan ke section yang sudah
   punya insight memunculkan "Perlu generate ulang"; daftar report sengaja tidak (butuh
   agregat updatedAt per report) dan itu batas yang diketahui.
+- **Batch D audit (Jul 2026)** — kegagalan yang tak terlihat user:
+  semua `res.json()` di klien memakai `.catch(() => ({}))` dan pesan cadangannya menyebut
+  kode status (respons 500 HTML / 413 proxy / body kosong dulu melempar dan muncul sebagai
+  "Kesalahan jaringan." padahal jaringan sehat); `deleteSaved` & `patchSavedPeriod` kini
+  punya try/catch, guard klik-ganda, dan pesan per-foto (dulu hapus foto yang gagal membuat
+  layar TIDAK berubah sama sekali); `savePending` mereset state saat 403 sehingga tombol
+  tidak macet "Menyimpan…" selamanya; halaman Sections menampilkan pesan 409 dari server
+  ("masih dipakai N foto") alih-alih membuangnya; ukuran file divalidasi di klien SEBELUM
+  unggah; ketikan Rekomendasi yang belum disimpan ditandai "• belum tersimpan" + peringatan
+  `beforeunload`.
+  > Pelajaran yang dicatat: `tsc` TIDAK menangkap TDZ ketika referensi maju berada di dalam
+  > callback (`platforms.some((p) => recoDirty(p))` sebelum `recoDirty` dideklarasikan).
+  > Perubahan komponen client WAJIB diverifikasi dengan benar-benar merender halamannya.
 - **P4** Hapus section/user ber-relasi → pre-check count = 409 berpesan (relasi RESTRICT =
   Postgres 23001 di-surface Prisma sbg UnknownRequestError, bukan P2003 — jangan andalkan
   kode error).
