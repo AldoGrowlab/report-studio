@@ -31,11 +31,20 @@ const MODEL = "claude-opus-4-8";
 // Lihat docs/DESIGN.md §Normalisasi Notasi Singkatan. Huruf tidak peduli besar/kecil; embel
 // I/IDR/Rp dan spasi diabaikan.
 
-// Pengali suffix per platform. Suffix tak dikenal -> ×1.
+// Pengali suffix per platform. "m" SENGAJA beda arti: juta di Shopee, miliar di TikTok.
+// "jt"/"juta" berlaku di kedua platform — Shopee berlokal Indonesia juga menampilkannya.
 const MULTIPLIERS: Record<Platform, Record<string, number>> = {
-  shopee: { k: 1_000, m: 1_000_000, b: 1_000_000_000 },
-  tiktok: { k: 1_000, jt: 1_000_000, m: 1_000_000_000, b: 1_000_000_000 },
+  shopee: { k: 1_000, jt: 1_000_000, juta: 1_000_000, m: 1_000_000, b: 1_000_000_000 },
+  tiktok: { k: 1_000, jt: 1_000_000, juta: 1_000_000, m: 1_000_000_000, b: 1_000_000_000 },
 };
+
+// Suffix yang BERMAKNA besaran di mana pun. Dipakai untuk membedakan dua hal yang dulu
+// sama-sama jadi ×1: (a) embel non-besaran ("120 pesanan") yang memang wajar diabaikan,
+// dan (b) besaran yang tak dikenal platform ini ("1,2 mio") — yang kalau diam-diam ×1
+// menghasilkan kesalahan ribuan sampai jutaan kali. Kasus (b) WAJIB ditandai ragu.
+const MAGNITUDE_SUFFIXES = new Set([
+  "k", "rb", "ribu", "jt", "juta", "m", "mio", "b", "miliar", "milyar", "t", "triliun",
+]);
 
 // Buang noise floating-point: bulatkan bila sangat dekat ke bilangan bulat.
 function cleanFloat(n: number): number {
@@ -43,17 +52,29 @@ function cleanFloat(n: number): number {
   return Math.abs(n - rounded) < 1e-4 ? rounded : n;
 }
 
+// Hasil normalisasi + apakah ada suffix BESARAN yang tak dikenal platform ini. Pemanggil
+// wajib menurunkan status jadi low_confidence bila unknownMagnitude — lihat statusFor().
+export type NormalizedNumber = { value: number | null; unknownMagnitude: boolean };
+
 // raw_text (teks apa adanya dari gambar) -> nilai numerik PENUH, mengikuti aturan per-platform.
 // Mengembalikan null kalau tak ada angka yang bisa dibaca.
 export function normalizeAbbreviatedNumber(
   rawText: string | null | undefined,
   platform: Platform
 ): number | null {
-  if (typeof rawText !== "string") return null;
+  return normalizeAbbreviatedNumberDetailed(rawText, platform).value;
+}
+
+export function normalizeAbbreviatedNumberDetailed(
+  rawText: string | null | undefined,
+  platform: Platform
+): NormalizedNumber {
+  const miss: NormalizedNumber = { value: null, unknownMagnitude: false };
+  if (typeof rawText !== "string") return miss;
 
   // Buang embel mata uang (IDR/Rp) dan "I" berdiri sendiri; jangan sentuh persen/rasio.
   let s = rawText.replace(/idr|rp/gi, " ").replace(/\bi\b/gi, " ").trim();
-  if (s === "") return null;
+  if (s === "") return miss;
 
   // Ambil suffix huruf di ujung (mis. K, M, jt, b) — dipisah dari inti angka.
   const sufMatch = s.match(/([a-z]+)\s*$/i);
@@ -65,7 +86,7 @@ export function normalizeAbbreviatedNumber(
 
   // Sisakan hanya karakter angka + pemisah + tanda; buang spasi dalam ("191,1 jt").
   const num = s.replace(/[^\d.,-]/g, "");
-  if (!/\d/.test(num)) return null;
+  if (!/\d/.test(num)) return miss;
 
   // Langkah 1 — desimal vs ribuan.
   let normalized: string;
@@ -95,11 +116,14 @@ export function normalizeAbbreviatedNumber(
   }
 
   const base = parseFloat(normalized);
-  if (!Number.isFinite(base)) return null;
+  if (!Number.isFinite(base)) return miss;
 
-  // Langkah 2 — pengali per platform (suffix tak dikenal → ×1).
-  const mult = MULTIPLIERS[platform][suffix] ?? 1;
-  return cleanFloat(base * mult);
+  // Langkah 2 — pengali per platform. Suffix tak dikenal tetap ×1 (angka tidak dibuang),
+  // TAPI kalau bentuknya besaran ("mio", "rb", "miliar" di Shopee) itu ditandai supaya
+  // masuk antrean konfirmasi manual — bukan lolos diam-diam sebagai angka yang sah.
+  const known = MULTIPLIERS[platform][suffix];
+  const unknownMagnitude = known === undefined && MAGNITUDE_SUFFIXES.has(suffix);
+  return { value: cleanFloat(base * (known ?? 1)), unknownMagnitude };
 }
 
 function clampConfidence(n: unknown): number {
@@ -108,8 +132,15 @@ function clampConfidence(n: unknown): number {
 }
 
 // Aturan status presisi (DESIGN): angka tak ada -> missing; ragu -> low_confidence; sisanya ok.
-function statusFor(value: number | null, confidence: number): ExtractionStatus {
+// Suffix besaran tak dikenal SELALU low_confidence berapa pun confidence model: nilainya
+// dihitung ×1 dan bisa meleset ribuan kali, jadi tidak boleh lolos tanpa dilihat manusia.
+function statusFor(
+  value: number | null,
+  confidence: number,
+  unknownMagnitude = false
+): ExtractionStatus {
   if (value === null) return "missing";
+  if (unknownMagnitude) return "low_confidence";
   if (confidence < LOW_CONFIDENCE_THRESHOLD) return "low_confidence";
   return "ok";
 }
@@ -129,10 +160,16 @@ function buildResults(
     const llmValue =
       item && typeof item.value === "number" && Number.isFinite(item.value) ? item.value : null;
     // Prioritaskan normalisasi deterministik dari raw_text; fallback ke value LLM.
-    const normalized = normalizeAbbreviatedNumber(rawText, platform);
-    const value = normalized !== null ? normalized : llmValue;
+    const normalized = normalizeAbbreviatedNumberDetailed(rawText, platform);
+    const value = normalized.value !== null ? normalized.value : llmValue;
     const confidence = value === null ? 0 : clampConfidence(item?.confidence);
-    return { key: m.key, value, rawText, confidence, status: statusFor(value, confidence) };
+    return {
+      key: m.key,
+      value,
+      rawText,
+      confidence,
+      status: statusFor(value, confidence, normalized.unknownMagnitude),
+    };
   });
 }
 

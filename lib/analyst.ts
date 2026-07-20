@@ -22,6 +22,9 @@ const MODEL = "claude-opus-4-8";
 // miliaran → "miliar" 1 desimal. Persen/rasio bukan besaran ribuan: tampil apa adanya,
 // desimal koma (id-ID), tanpa pembulatan diam-diam.
 export function abbreviateNumberID(value: number, type: MetricType): string {
+  // Nilai non-finite tidak boleh pernah tercetak sebagai "NaN miliar" di slide klien.
+  if (!Number.isFinite(value)) return "tidak tersedia";
+
   const plain = value.toLocaleString("id-ID", { maximumFractionDigits: 20 });
   if (type === "percent") return `${plain}%`;
   if (type === "ratio") return plain;
@@ -29,11 +32,20 @@ export function abbreviateNumberID(value: number, type: MetricType): string {
   const abs = Math.abs(value);
   if (abs < 1_000) return plain;
 
-  const scaled = (divisor: number) =>
-    (value / divisor).toFixed(1).replace(".", ",");
-  if (abs < 1_000_000) return `${scaled(1_000)}k`;
-  if (abs < 1_000_000_000) return `${scaled(1_000_000)} jt`;
-  return `${scaled(1_000_000_000)} miliar`;
+  // Satuan dipilih SETELAH pembulatan: 999.999 membulat ke 1000,0k, yang sebenarnya
+  // 1,0 jt. Naik satu tingkat kalau pembulatan menyentuh 1000. Tingkat teratas tetap
+  // miliar (DESIGN), jadi nilai ≥1000 miliar sengaja tampil sebagai "1000,0 miliar".
+  const TIERS: [number, string][] = [
+    [1_000, "k"],
+    [1_000_000, " jt"],
+    [1_000_000_000, " miliar"],
+  ];
+  const TOP = TIERS.length - 1;
+  let tier = abs >= 1_000_000_000 ? 2 : abs >= 1_000_000 ? 1 : 0;
+  if (tier < TOP && Number((abs / TIERS[tier][0]).toFixed(1)) >= 1000) tier++;
+
+  const [divisor, unit] = TIERS[tier];
+  return `${(value / divisor).toFixed(1).replace(".", ",")}${unit}`;
 }
 
 // Satu metrik siap-analisa: nilai penuh tetap di Extraction; yang dikirim ke model

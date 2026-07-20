@@ -273,6 +273,7 @@ export default function UploadManager({
           extractions: [],
         },
       ]);
+      markStale(data.upload.sectionId, data.upload.platform);
       setPending((prev) => prev.filter((p) => p.localId !== item.localId));
     } catch {
       patchPending(item.localId, { saving: false, error: "Kesalahan jaringan." });
@@ -314,6 +315,7 @@ export default function UploadManager({
         return s;
       })
     );
+    markStale(u.sectionId, u.platform);
   }
 
   async function deleteSaved(u: SavedUpload) {
@@ -323,7 +325,10 @@ export default function UploadManager({
       router.push("/login");
       return;
     }
-    if (res.ok) setSaved((prev) => prev.filter((p) => p.id !== u.id));
+    if (res.ok) {
+      setSaved((prev) => prev.filter((p) => p.id !== u.id));
+      markStale(u.sectionId, u.platform);
+    }
   }
 
   // --- Lightbox: lihat foto ukuran penuh untuk cocokkan angka dgn hasil ekstraksi ---
@@ -369,6 +374,8 @@ export default function UploadManager({
       );
       // Hasil baru -> kembalikan deteksi foto-kosong ke default untuk upload ini.
       setManualFill((p) => ({ ...p, [uploadId]: false }));
+      const up = saved.find((u) => u.id === uploadId);
+      if (up) markStale(up.sectionId, up.platform);
     } catch {
       setExtractError((p) => ({ ...p, [uploadId]: "Kesalahan jaringan." }));
     } finally {
@@ -424,6 +431,9 @@ export default function UploadManager({
         setEditError((p) => ({ ...p, [extractionId]: data.error || "Gagal menyimpan." }));
         return;
       }
+      // Angka berubah -> insight & kesimpulan yang memakainya jadi basi.
+      const edited = saved.find((u) => u.id === uploadId);
+      if (edited) markStale(edited.sectionId, edited.platform);
       // Ganti baris dari respons server (bukti sudah persist di Extraction).
       setSaved((prev) =>
         prev.map((u) =>
@@ -494,6 +504,15 @@ export default function UploadManager({
       }
       // Baru di-generate dari data terkini -> tidak basi.
       setInsights((p) => ({ ...p, [sectionId]: { ...data.insight, stale: false } }));
+      // ...tapi kesimpulan platform ini merangkum poin insight yang kini sudah berubah.
+      const platform =
+        sections.find((s) => s.id === sectionId)?.platform ??
+        saved.find((u) => u.sectionId === sectionId)?.platform;
+      if (platform) {
+        setConclusions((p) =>
+          p[platform] ? { ...p, [platform]: { ...p[platform], stale: true } } : p
+        );
+      }
     } catch {
       setInsightError((p) => ({ ...p, [sectionId]: "Kesalahan jaringan." }));
     } finally {
@@ -547,6 +566,25 @@ export default function UploadManager({
   const [conclusions, setConclusions] = useState<Record<string, PlatformConclusion>>(() =>
     Object.fromEntries(initialConclusions.map((c) => [c.platform, c]))
   );
+  // Audit Batch A — data section berubah => insight section itu DAN kesimpulan platformnya
+  // jadi BASI. Server sudah menghitung ini, TAPI hanya saat halaman dimuat: tanpa penandaan
+  // di client, layar tetap tampak segar setelah user mengoreksi angka, dan dialog peringatan
+  // sebelum Unduh PPT tak pernah menyala — deck terkirim dengan narasi lama. Dipanggil dari
+  // SETIAP mutasi data (unggah, hapus, ganti bulan, ekstrak, koreksi angka).
+  function markStale(sectionId: string, platformHint?: string) {
+    setInsights((p) =>
+      p[sectionId] ? { ...p, [sectionId]: { ...p[sectionId], stale: true } } : p
+    );
+    const platform =
+      platformHint ??
+      sections.find((s) => s.id === sectionId)?.platform ??
+      saved.find((u) => u.sectionId === sectionId)?.platform;
+    if (!platform) return;
+    setConclusions((p) =>
+      p[platform] ? { ...p, [platform]: { ...p[platform], stale: true } } : p
+    );
+  }
+
   const [conclusionLoading, setConclusionLoading] = useState<Record<string, boolean>>({});
   const [conclusionError, setConclusionError] = useState<Record<string, string>>({});
   // Ringkasan cek konsistensi run terakhir (per platform) — transparansi hasil satu klik.

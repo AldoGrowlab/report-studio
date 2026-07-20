@@ -28,7 +28,10 @@
    - ratusan tetap utuh (350 → 350);
    - ribuan → "k" 1 desimal, termasuk di bawah 10.000 (5.234 → 5,2k; 19.876 → 19,9k);
    - jutaan → "jt" 1 desimal (12.023.111 → 12,0 jt);
-   - miliaran → "miliar" 1 desimal.
+   - miliaran → "miliar" 1 desimal (tingkat teratas; ≥1.000 miliar tampil "1000,0 miliar").
+   - Satuan dipilih SETELAH pembulatan (Jul 2026): 999.999 membulat ke "1000,0k", yang
+     sebenarnya "1,0 jt" — naik satu tingkat bila pembulatan menyentuh 1000.
+   - Nilai non-finite (NaN/Infinity) → "tidak tersedia", tak pernah tercetak di slide.
 
 ## Normalisasi Notasi Singkatan (aturan ekstraksi permanen, per-platform)
 
@@ -49,12 +52,22 @@ Huruf tidak peduli besar/kecil; abaikan embel `I`/`IDR`/`Rp` dan spasi.
 |---|---|---|
 | `k` | ×1.000 | ×1.000 |
 | `m` / `M` | ×1.000.000 (juta) | ×1.000.000.000 (miliar) |
-| `jt` | — | ×1.000.000 (juta) |
+| `jt` / `juta` | ×1.000.000 (juta) | ×1.000.000 (juta) |
 | `b` | ×1.000.000.000 (miliar) | ×1.000.000.000 (miliar) |
 
 > Catatan: di TikTok, juta ditulis `jt` dan miliar ditulis `M`. Di Shopee, juta ditulis `m`.
+> `jt`/`juta` berlaku di KEDUA platform (Jul 2026): Shopee berlokal Indonesia juga menampilkan
+> "jt", dan sebelumnya suffix itu diam-diam jadi ×1 di Shopee — `191,1 jt` tersimpan sebagai
+> `191,1`, salah 1.000.000×, tetap berstatus `ok`.
 > Suffix yang tak dikenal → pengali ×1 (nilai apa adanya). Karena Extractor sudah tahu platform
 > tiap foto, aturan pengali diterapkan per-platform.
+>
+> **Namun ×1 tidak boleh diam-diam (Jul 2026).** Bedakan dua hal yang dulu diperlakukan sama:
+> embel NON-besaran ("120 pesanan") wajar diabaikan dan tetap berstatus `ok`, sedangkan suffix
+> yang BERMAKNA besaran tapi tak dikenal platform itu (mis. `mio`, `rb`, `miliar` di Shopee)
+> dipaksa berstatus **`low_confidence`** berapa pun confidence model, sehingga masuk antrean
+> konfirmasi manual Tahap 5. Alasan: ×1 pada besaran bisa meleset ribuan sampai jutaan kali,
+> dan angka sesalah itu tidak boleh lolos ke insight/PPT tanpa dilihat manusia (Prinsip #1).
 
 **Langkah 3 — simpan nilai PENUH** hasil perkalian di `Extraction.value` (BUKAN yang bersingkatan).
 `raw_text` tetap menyimpan teks asli apa adanya (mis. `179.395,44K`).
@@ -309,9 +322,14 @@ fotonya belum ada.
   `Insight.numbers` = snapshot kosakata angka singkat yang dikirim ke model. **Bold angka
   metrik deterministik, TANPA penanda markdown dari LLM**: renderer (PPT & web) memecah tiap
   poin jadi run normal/bold via pencocokan substring terhadap kosakata itu (`lib/insight-format.ts`,
-  kandidat terpanjang dulu) — tak bisa rusak (tak ada sintaks penanda), dan yang di-bold pasti
+  kandidat terpanjang dulu, DAN wajib berdiri sebagai token utuh) — tak bisa rusak (tak ada
+  sintaks penanda), dan yang di-bold pasti
   bentuk singkat yang dihitung dari `Extraction`; angka yang ditulis model menyimpang otomatis
-  TIDAK di-bold (terlihat, bukan bold nyasar). `kb_version` insight diisi via
+  TIDAK di-bold (terlihat, bukan bold nyasar). Batas token (Jul 2026): kecocokan ditolak bila
+  didahului digit atau "#" ("Sumber #1"), atau diikuti digit/"%" — tanpa itu "4,4%" ikut
+  mem-bold ekor "14,4%" dan "50" mem-bold ekor "2050". Titik/koma hanya membatalkan bila
+  diapit digit ("50.000"), supaya tanda baca akhir kalimat ("naik 4,4%.") tetap ter-bold.
+  `kb_version` insight diisi via
   snapshot-lazy: saat generate, kalau `KbVersion` terbaru section tidak sama dengan `kbAnalysis`
   sekarang, buat versi baru (max+1) — provenance KB persis yang dipakai, tanpa membebani route
   section.
@@ -454,6 +472,12 @@ Sudah DIPERBAIKI (K = kritis, P = penting):
   halaman report menandai insight/kesimpulan yang datanya berubah sesudah dibuat +
   peringatan di tombol Unduh PPT. (Catatan: hapus-foto-saja setelah generate TIDAK
   memicu badge — max-timestamp tak turun; jarang, generate ulang tetap manual.)
+  **Penting (Jul 2026): server hanya menghitung ini saat halaman DIMUAT.** Klien wajib ikut
+  menandai basi setelah tiap mutasi (`markStale` di UploadManager: unggah, hapus foto, ganti
+  bulan, ekstrak, koreksi angka; generate insight → membasikan kesimpulan platformnya).
+  Tanpa itu layar tetap tampak segar sesudah koreksi angka, dialog peringatan sebelum Unduh
+  PPT tak pernah menyala, dan deck terkirim dengan narasi lama — tidak ada `router.refresh()`
+  di aplikasi ini, jadi tak ada mekanisme pemulih lain selain reload manual.
 - **P4** Hapus section/user ber-relasi → pre-check count = 409 berpesan (relasi RESTRICT =
   Postgres 23001 di-surface Prisma sbg UnknownRequestError, bukan P2003 — jangan andalkan
   kode error).

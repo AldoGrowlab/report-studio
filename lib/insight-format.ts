@@ -3,6 +3,8 @@
 // generate). TANPA penanda markdown dari LLM: bold adalah properti segmen yang dihitung
 // kode, jadi tidak bisa "rusak" (lupa tutup, salah posisi). Angka yang ditulis model
 // menyimpang dari kosakata otomatis TIDAK di-bold — terlihat, bukan bold nyasar.
+// Kecocokan WAJIB berdiri sebagai token utuh (lihat isTokenBoundary): tanpa itu "4,4%"
+// akan ikut mem-bold ekor "14,4%", dan "50" mem-bold ekor "2050".
 // Dipakai renderer PPT (lib/ppt.ts) dan panel web (UploadManager) supaya konsisten.
 
 // ---- Sub-poin bertingkat (Fase C, SATU tingkat) ----
@@ -44,6 +46,24 @@ export function flattenPoints(points: StructuredPoint[]): string[] {
 
 export type TextSegment = { text: string; bold: boolean };
 
+// Kecocokan harus berdiri sebagai token utuh, bukan potongan angka lain. Titik dan koma
+// TIDAK otomatis membatalkan: keduanya baru berarti "angka berlanjut" kalau diikuti/didahului
+// digit ("50.000"), sebaliknya itu cuma tanda baca akhir kalimat ("naik 4,4%.") yang justru
+// HARUS tetap di-bold. "#" di depan ditolak supaya "Sumber #1" tak dianggap angka metrik.
+const isDigit = (c: string) => c >= "0" && c <= "9";
+
+function isTokenBoundary(text: string, start: number, end: number): boolean {
+  const before = start > 0 ? text[start - 1] : "";
+  if (isDigit(before) || before === "#") return false;
+  if ((before === "." || before === ",") && isDigit(text[start - 2] ?? "")) return false;
+
+  const after = end < text.length ? text[end] : "";
+  if (isDigit(after) || after === "%") return false;
+  if ((after === "." || after === ",") && isDigit(text[end + 1] ?? "")) return false;
+
+  return true;
+}
+
 export function splitByNumbers(text: string, numbers: string[]): TextSegment[] {
   // Kandidat unik, urut TERPANJANG dulu: "4,4%" harus menang atas kandidat lain yang
   // kebetulan menjadi awalannya — pencocokan tak boleh memotong angka jadi sebagian.
@@ -58,7 +78,11 @@ export function splitByNumbers(text: string, numbers: string[]): TextSegment[] {
   let plainStart = 0;
   let i = 0;
   while (i < text.length) {
-    const match = candidates.find((c) => text.startsWith(c, i));
+    // Kandidat pertama yang cocok DAN berdiri sebagai token utuh. Kandidat yang gagal
+    // batas tidak menggugurkan yang lain di posisi sama (mis. "1" ditolak, "1,2k" lolos).
+    const match = candidates.find(
+      (c) => text.startsWith(c, i) && isTokenBoundary(text, i, i + c.length)
+    );
     if (match) {
       if (i > plainStart) {
         segments.push({ text: text.slice(plainStart, i), bold: false });
