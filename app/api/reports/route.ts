@@ -10,7 +10,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Tidak diizinkan." }, { status: 403 });
   }
 
-  let body: { platform?: string; reportPeriod?: string };
+  let body: { platform?: string; reportPeriod?: string; brandName?: string };
   try {
     body = await request.json();
   } catch {
@@ -22,6 +22,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Platform harus shopee atau tiktok." }, { status: 400 });
   }
 
+  const brandName = body.brandName?.trim();
+  if (!brandName) {
+    return NextResponse.json({ error: "Nama brand wajib diisi." }, { status: 400 });
+  }
+
   const reportPeriod = body.reportPeriod?.trim();
   if (!reportPeriod) {
     return NextResponse.json({ error: "Periode report wajib diisi." }, { status: 400 });
@@ -29,6 +34,7 @@ export async function POST(request: Request) {
 
   const report = await prisma.report.create({
     data: {
+      brandName,
       reportPeriod,
       platforms: [platform as Platform],
       createdById: session.userId,

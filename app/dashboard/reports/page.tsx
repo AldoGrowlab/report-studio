@@ -182,7 +182,10 @@ export default async function ReportsPage({
                       {r.status}
                     </span>
                   </div>
-                  <p className="mt-2 text-sm font-medium text-fg">{r.reportPeriod}</p>
+                  <p className="mt-2 text-sm font-medium text-fg">
+                    {r.brandName ?? "Tanpa nama brand"}
+                    <span className="ml-2 font-normal text-fg-3">· {r.reportPeriod}</span>
+                  </p>
                   <p className="mt-1 text-xs text-fg-3">
                     {r.createdBy.email} ·{" "}
                     {r.createdAt.toLocaleDateString("id-ID", {

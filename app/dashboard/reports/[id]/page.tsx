@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { canAccessReport } from "@/lib/reports";
 import UploadManager from "./UploadManager";
+import DeleteReportButton from "./DeleteReportButton";
 
 export default async function ReportDetailPage({
   params,
@@ -168,20 +169,26 @@ export default async function ReportDetailPage({
           ← Kembali ke daftar report
         </Link>
 
-        <div className="mt-4 flex items-center gap-2">
-          {report.platforms.map((p) => (
-            <span
-              key={p}
-              className="badge border border-line bg-surface-2 text-fg-2"
-            >
-              {p === "shopee" ? "Shopee" : "TikTok"}
-            </span>
-          ))}
-          <span className="badge bg-warn/15 text-warn">
-            {report.status}
-          </span>
+        <div className="mt-4 flex items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              {report.platforms.map((p) => (
+                <span
+                  key={p}
+                  className="badge border border-line bg-surface-2 text-fg-2"
+                >
+                  {p === "shopee" ? "Shopee" : "TikTok"}
+                </span>
+              ))}
+              <span className="badge bg-warn/15 text-warn">{report.status}</span>
+            </div>
+            <h1 className="mt-1.5 text-2xl font-semibold">
+              {report.brandName ?? "Tanpa nama brand"}
+            </h1>
+            <p className="mt-0.5 text-sm text-fg-3">{report.reportPeriod}</p>
+          </div>
+          <DeleteReportButton reportId={report.id} />
         </div>
-        <h1 className="mt-1.5 text-2xl font-semibold">{report.reportPeriod}</h1>
 
         <UploadManager
           reportId={report.id}

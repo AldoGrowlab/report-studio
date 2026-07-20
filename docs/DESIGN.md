@@ -409,9 +409,13 @@ fotonya belum ada.
   general/merangkai) — menyusul setelah founder mengisi KB; dua cek bawaan (kontradiksi +
   tone) sudah jalan di Tahap 7b.
 - Konfirmasi label ringan eksplisit (saat ini: dropdown + simpan eksplisit; `labelConfirmed` selalu true).
-- Bersihkan file storage saat hapus report — route DELETE report BELUM ada; saat dibangun, WAJIB hapus
-  file R2/disk semua upload dulu (cascade DB tidak menyentuh storage). Pola benar sudah ada di
-  DELETE upload tunggal.
+- ~~Bersihkan file storage saat hapus report~~ — SELESAI (Jul 2026): `DELETE /api/reports/[id]`
+  menghapus file R2/disk semua upload DULU lalu cascade DB (Model B akses); tombol "Hapus report"
+  di halaman detail report.
+
+**Fitur report tambahan (Jul 2026):** `Report.brandName` (nama brand/toko, nullable — report
+lama tak punya) diisi saat buat report; periode report kini dropdown "bulan lalu/ini/depan"
+(nilai = label bulan sebenarnya). Brand tampil di daftar & detail report. PPT tak berubah.
 
 ## Akses & Permission (audit pra-deploy, Jul 2026)
 

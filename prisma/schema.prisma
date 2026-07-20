@@ -95,6 +95,8 @@ enum ReportStatus {
 model Report {
   id           String       @id @default(cuid())
   reportPeriod String
+  // Nama brand/toko yang dilaporkan (Jul 2026). Nullable: report lama tak punya.
+  brandName    String?
   platforms    Platform[]
   status       ReportStatus @default(draft)
   createdById  String

@@ -2,13 +2,32 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { formatMonthID } from "@/lib/period";
 
 type Platform = "shopee" | "tiktok";
+
+// Opsi periode: bulan lalu / ini / depan — nilai = label bulan sebenarnya ("Juli 2026")
+// supaya bermakna di report; teks opsi menjelaskan posisinya. Dihitung sekali saat mount.
+function buildPeriodOptions(now: Date) {
+  const y = now.getFullYear();
+  const m = now.getMonth(); // 0-11
+  const monthLabel = (offset: number) => {
+    const d = new Date(y, m + offset, 1);
+    return formatMonthID(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  };
+  return [
+    { value: monthLabel(-1), text: `Bulan lalu — ${monthLabel(-1)}` },
+    { value: monthLabel(0), text: `Bulan ini — ${monthLabel(0)}` },
+    { value: monthLabel(1), text: `Bulan depan — ${monthLabel(1)}` },
+  ];
+}
 
 export default function NewReportPage() {
   const router = useRouter();
   const [platform, setPlatform] = useState<Platform>("shopee");
-  const [reportPeriod, setReportPeriod] = useState("");
+  const [brandName, setBrandName] = useState("");
+  const [periodOptions] = useState(() => buildPeriodOptions(new Date()));
+  const [reportPeriod, setReportPeriod] = useState(() => buildPeriodOptions(new Date())[1].value);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -19,7 +38,7 @@ export default function NewReportPage() {
       const res = await fetch("/api/reports", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform, reportPeriod }),
+        body: JSON.stringify({ platform, brandName, reportPeriod }),
       });
       if (res.status === 403) {
         router.push("/login");
@@ -50,10 +69,22 @@ export default function NewReportPage() {
 
         <h1 className="mt-6 text-2xl font-semibold tracking-tight">Report baru</h1>
         <p className="mt-1.5 text-sm text-fg-3">
-          Pilih platform dan periode. Setelah dibuat, kamu bisa unggah &amp; labeli screenshot.
+          Isi nama brand, platform, dan periode. Setelah dibuat, kamu bisa unggah &amp; labeli
+          screenshot.
         </p>
 
         <div className="card mt-7 space-y-5 p-6">
+          <div>
+            <label className="label-sm mb-1.5 block">Nama brand</label>
+            <input
+              type="text"
+              value={brandName}
+              onChange={(e) => setBrandName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+              className="input w-full"
+              placeholder="mis. Toko Sepatu Aurora"
+            />
+          </div>
           <div>
             <label className="label-sm mb-1.5 block">Platform</label>
             <select
@@ -67,14 +98,17 @@ export default function NewReportPage() {
           </div>
           <div>
             <label className="label-sm mb-1.5 block">Periode report</label>
-            <input
-              type="text"
+            <select
               value={reportPeriod}
               onChange={(e) => setReportPeriod(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-              className="input w-full"
-              placeholder="mis. Juni 2026"
-            />
+              className="select w-full"
+            >
+              {periodOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.text}
+                </option>
+              ))}
+            </select>
           </div>
 
           {error && <p className="text-sm text-danger">{error}</p>}

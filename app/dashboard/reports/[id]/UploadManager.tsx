@@ -692,8 +692,15 @@ export default function UploadManager({
         <h2 className="text-sm font-medium text-fg">Unggah screenshot</h2>
         {noActiveSections ? (
           <p className="mt-2 text-sm text-warn">
-            Belum ada section aktif untuk platform ini. Buat/aktifkan section dulu di Section &amp; KB
-            sebelum melabeli foto.
+            Tombol upload nonaktif karena belum ada section aktif untuk platform ini. Buat &amp;
+            aktifkan section dulu di{" "}
+            <a
+              href="/dashboard/sections"
+              className="font-medium underline underline-offset-2 hover:text-warn/80"
+            >
+              Section &amp; KB
+            </a>{" "}
+            (nama + KB + minimal 1 metrik), lalu tombol ini otomatis aktif.
           </p>
         ) : (
           <p className="mt-1 text-xs text-fg-3">
@@ -702,7 +709,9 @@ export default function UploadManager({
           </p>
         )}
         <label className="mt-3 inline-block">
-          <span className="btn-ghost cursor-pointer px-4 py-2">
+          <span
+            className={`btn-ghost px-4 py-2 ${noActiveSections ? "cursor-not-allowed opacity-45" : "cursor-pointer"}`}
+          >
             Pilih gambar…
           </span>
           <input
