@@ -73,6 +73,10 @@ export type PptPhoto = {
   bytes: Uint8Array;
   contentType: string;
   sourceIndex: number; // nomor "Sumber #n", konsisten dengan UI & Analyst
+  // Label bulan yang DITENTUKAN USER (section perbandingan periode), mis. "Juni 2026".
+  // Dipakai sebagai caption menggantikan "Sumber #n" — bulan jauh lebih informatif bagi
+  // pembaca deck daripada nomor urut. null = section biasa (tanpa periode).
+  periodLabel: string | null;
 };
 
 // Insight = poin-poin + kosakata angka singkat (snapshot dari Insight.numbers) — angka
@@ -471,7 +475,12 @@ export async function buildReportPptx(
         const cellH = (inner.h - PHOTO_GAP * (n - 1)) / n;
         section.photos.forEach((photo, i) => {
           const cellY = inner.y + i * (cellH + PHOTO_GAP);
-          const capH = section.multiSource ? CAPTION_H : 0;
+          // Caption = label bulan dari user kalau ada; kalau tidak, nomor "Sumber #n" dan
+          // hanya saat sumbernya memang lebih dari satu. null = tanpa caption.
+          const caption =
+            photo.periodLabel ??
+            (section.multiSource ? `Sumber #${photo.sourceIndex}` : null);
+          const capH = caption ? CAPTION_H : 0;
           const rect = containRect(photo, {
             x: inner.x,
             y: cellY,
@@ -479,9 +488,9 @@ export async function buildReportPptx(
             h: cellH - capH,
           });
           slide.addImage({ data: photo.data, x: rect.x, y: rect.y, w: rect.w, h: rect.h });
-          if (section.multiSource) {
+          if (caption) {
             // Caption di DALAM kartu putih -> selalu abu sekunder (terbaca, netral tema).
-            slide.addText(`Sumber #${photo.sourceIndex}`, {
+            slide.addText(caption, {
               x: inner.x,
               y: rect.y + rect.h,
               w: inner.w,

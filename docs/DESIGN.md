@@ -117,9 +117,12 @@ bukan disetel manual. — SUDAH DIIMPLEMENTASI.
   platform itu sendiri — TIDAK ada kesimpulan gabungan lintas-platform (lihat §Validator
   & Kesimpulan).
 
-> CATATAN IMPLEMENTASI TERTUNDA: tahap upload saat ini = satu platform per report (disederhanakan).
-> Untuk output dua-platform nanti perlu cara menyatukan dua report (Shopee + TikTok) jadi satu
-> PPT dua-blok. Catat saat tiba di Template Engine.
+> TERPASANG (Jul 2026): satu report bisa mencakup dua platform sekaligus. Form report baru
+> memilih Shopee dan/atau TikTok; `POST /api/reports` menerima `platforms[]` dan menormalkan
+> urutannya ke Shopee → TikTok. Tidak ada penggabungan dua report — `Report.platforms` memang
+> array sejak awal dan seluruh alur hilir (dropdown section, kesimpulan, rekomendasi, blok PPT)
+> sudah per-platform. Diverifikasi: PPT dua blok = cover → divider Shopee → section → kesimpulan
+> → rekomendasi → divider TikTok → … → Thank You, penomoran halaman menerus.
 
 ## Perbandingan Periode (properti sebagian section)
 
@@ -357,6 +360,7 @@ fotonya belum ada.
 - [x] Tahap 8 — Template Engine: `.pptx` deterministik (TANPA AI) via `pptxgenjs`, builder murni
   `lib/ppt.ts`. Per blok platform (Shopee dulu): cover → slide per section (urut `narrativeOrder`;
   section masuk = yang punya upload; foto EMBEDDED di kiri — semua foto section satu slide, caption
+  = label bulan user ("Juni 2026") bila section memakai perbandingan periode, selain itu
   "Sumber #n" saat >1; insight di kanan sebagai bullet list dengan ANGKA METRIK BOLD via run
   pptxgenjs — pencocokan kode terhadap `Insight.numbers`, bukan penanda LLM; kosong bila belum
   ada) → slide "Kesimpulan"
@@ -382,7 +386,8 @@ fotonya belum ada.
   primer penuh + KARTU putih berisi poin (teks tetap gelap di dalam kartu, bold angka tak
   berubah); pembatas & Thank You senada (latar primer). Penyesuaian: slide SECTION ikut
   GELAP (latar primer; judul terang; foto dalam kartu putih membulat — foto tak pernah
-  ditimpa, kartu di belakang; caption "Sumber #n" abu di dalam kartu; insight = panel
+  ditimpa, kartu di belakang; caption abu di dalam kartu — label bulan bila ada, selain itu
+  "Sumber #n"; insight = panel
   primer-diterangkan-tipis + teks terang, bold angka tetap). Kontras SELALU dijaga
   `isDarkColor` (luminans, `lib/theme.ts`): tema berprimer TERANG otomatis memakai teks
   gelap/sekunder di semua slide berlatar primer — tak pernah putih-di-terang. Semua warna

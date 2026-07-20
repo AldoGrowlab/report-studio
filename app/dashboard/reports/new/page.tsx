@@ -24,7 +24,13 @@ function buildPeriodOptions(now: Date) {
 
 export default function NewReportPage() {
   const router = useRouter();
-  const [platform, setPlatform] = useState<Platform>("shopee");
+  // Satu report boleh mencakup dua platform sekaligus — PPT-nya jadi satu file dengan
+  // blok Shopee lalu blok TikTok. Urutan kanonik ditegakkan lagi di server.
+  const [platforms, setPlatforms] = useState<Platform[]>(["shopee"]);
+  const togglePlatform = (p: Platform) =>
+    setPlatforms((prev) =>
+      prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]
+    );
   const [brandName, setBrandName] = useState("");
   const [periodOptions] = useState(() => buildPeriodOptions(new Date()));
   const [reportPeriod, setReportPeriod] = useState(() => buildPeriodOptions(new Date())[1].value);
@@ -38,7 +44,7 @@ export default function NewReportPage() {
       const res = await fetch("/api/reports", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform, brandName, reportPeriod }),
+        body: JSON.stringify({ platforms, brandName, reportPeriod }),
       });
       if (res.status === 403) {
         router.push("/login");
@@ -87,14 +93,30 @@ export default function NewReportPage() {
           </div>
           <div>
             <label className="label-sm mb-1.5 block">Platform</label>
-            <select
-              value={platform}
-              onChange={(e) => setPlatform(e.target.value as Platform)}
-              className="select w-full"
-            >
-              <option value="shopee">Shopee</option>
-              <option value="tiktok">TikTok</option>
-            </select>
+            <div className="grid grid-cols-2 gap-2">
+              {(["shopee", "tiktok"] as const).map((p) => {
+                const active = platforms.includes(p);
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => togglePlatform(p)}
+                    className={`rounded-lg border px-3 py-2.5 text-sm transition-colors ${
+                      active
+                        ? "border-accent bg-accent/10 text-fg"
+                        : "border-line bg-surface-2 text-fg-3 hover:text-fg-2"
+                    }`}
+                  >
+                    {p === "shopee" ? "Shopee" : "TikTok"}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-1.5 text-xs text-fg-3">
+              Pilih dua-duanya kalau report ini mencakup Shopee dan TikTok — hasilnya satu
+              PPT dengan dua bagian.
+            </p>
           </div>
           <div>
             <label className="label-sm mb-1.5 block">Periode report</label>
@@ -115,7 +137,7 @@ export default function NewReportPage() {
 
           <button
             onClick={handleCreate}
-            disabled={submitting}
+            disabled={submitting || platforms.length === 0}
             className="btn-primary w-full py-2.5"
           >
             {submitting ? "Membuat…" : "Buat report"}

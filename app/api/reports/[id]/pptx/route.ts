@@ -4,6 +4,7 @@ import { getSession } from "@/lib/session";
 import { canAccessReport } from "@/lib/reports";
 import { getStorage } from "@/lib/storage";
 import { groupBySection } from "@/lib/uploads-view";
+import { formatMonthID } from "@/lib/period";
 import {
   buildReportPptx,
   DEFAULT_PPT_THEME,
@@ -83,6 +84,8 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/reports/[id
           bytes: image.bytes,
           contentType: image.contentType,
           sourceIndex: i + 1,
+          // Bulan yang dipilih user (section perbandingan periode) jadi caption foto.
+          periodLabel: u.periodMonth ? formatMonthID(u.periodMonth) : null,
         });
       }
       sections.push({
