@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
-import { canAccessReport } from "@/lib/reports";
+import { canAccessReport, reportProgress } from "@/lib/reports";
 import UploadManager from "./UploadManager";
 import DeleteReportButton from "./DeleteReportButton";
 
@@ -180,17 +180,34 @@ export default async function ReportDetailPage({
                   {p === "shopee" ? "Shopee" : "TikTok"}
                 </span>
               ))}
-              <span
-                className={`badge ${
-                  report.status === "done" || report.status === "downloaded"
-                    ? "bg-ok/15 text-ok"
-                    : report.status === "processing"
-                      ? "bg-accent/15 text-accent-hi"
-                      : "bg-warn/15 text-warn"
-                }`}
-              >
-                {report.status}
-              </span>
+              {(() => {
+                // Aturan badge sama persis dengan daftar report (lib/reports.ts) —
+                // datanya sudah ada di halaman ini, tak perlu query tambahan.
+                const p = reportProgress({
+                  status: report.status,
+                  uploadCount: report.uploads.length,
+                  sectionsWithPhotos: new Set(report.uploads.map((u) => u.sectionId)).size,
+                  insightCount: insights.length,
+                  platformsWithPhotos: new Set(report.uploads.map((u) => u.platform)).size,
+                  conclusionCount: conclusions.length,
+                  hasStale:
+                    initialInsights.some((i) => i.stale) ||
+                    initialConclusions.some((c) => c.stale),
+                });
+                return (
+                  <span
+                    className={`badge ${
+                      p.tone === "ok"
+                        ? "bg-ok/15 text-ok"
+                        : p.tone === "warn"
+                          ? "bg-warn/15 text-warn"
+                          : "bg-surface-2 text-fg-3 border border-line"
+                    }`}
+                  >
+                    {p.label}
+                  </span>
+                );
+              })()}
             </div>
             <h1 className="mt-1.5 text-2xl font-semibold">
               {report.brandName ?? "Tanpa nama brand"}

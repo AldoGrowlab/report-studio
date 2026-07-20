@@ -493,6 +493,24 @@ Sudah DIPERBAIKI (K = kritis, P = penting):
   (kredensial/jaringan/bucket) DILEMPAR → route pptx membalas 502 berpesan dan status report
   TIDAK maju ke `downloaded`. Dulu semua error jadi null, jadi gangguan R2 menyamar sebagai
   "foto belum diunggah" dan deck kosong terkirim dengan HTTP 200.
+- **Batch C audit (Jul 2026)** — akun & sesi:
+  (a) `PATCH /api/users/[id]` — reset password & ubah peran. Sebelumnya TIDAK ADA jalur
+  mengubah keduanya, sehingga operator yang lupa password tidak bisa direset DAN tidak bisa
+  dihapus bila sudah pernah membuat report (409) → akun terkunci permanen. Founder boleh
+  mengubah siapa pun; user biasa hanya password DIRINYA dan wajib password lama. Guard:
+  peran dari allowlist, founder terakhir tak boleh diturunkan, peran diri sendiri tak boleh
+  diubah. UI: tombol reset + dropdown peran di halaman Users, kartu "Password akun" di dashboard.
+  (b) Sesi diperkeras: klaim `exp` DI DALAM payload bertanda tangan (dulu 7 hari hanya
+  ditegakkan browser — nilai cookie yang tersalin berlaku selamanya lewat curl); `role` dan
+  keberadaan akun dibaca ULANG dari DB tiap request (dulu dipercaya dari cookie, sehingga
+  offboarding tidak berfungsi — akun terhapus tetap bisa dipakai); bentuk payload divalidasi;
+  tanda tangan dibandingkan `timingSafeEqual`. Biaya: satu lookup primary key per request.
+  Konsekuensi rilis: cookie format lama (tanpa `exp`) ditolak → semua orang login ulang sekali.
+  (c) Badge report DITURUNKAN dari data, bukan kolom `status` — lihat `reportProgress`
+  (`lib/reports.ts`). Nilai enum `processing`/`done` memang tak pernah ditulis di mana pun.
+  Halaman detail juga memakai penanda basi sehingga foto tambahan ke section yang sudah
+  punya insight memunculkan "Perlu generate ulang"; daftar report sengaja tidak (butuh
+  agregat updatedAt per report) dan itu batas yang diketahui.
 - **P4** Hapus section/user ber-relasi → pre-check count = 409 berpesan (relasi RESTRICT =
   Postgres 23001 di-surface Prisma sbg UnknownRequestError, bukan P2003 — jangan andalkan
   kode error).

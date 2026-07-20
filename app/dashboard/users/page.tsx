@@ -24,6 +24,50 @@ export default function UsersPage() {
   // Audit P1 — hapus akun (offboarding). Pesan per-baris + cegah klik ganda.
   const [deleting, setDeleting] = useState<Record<string, boolean>>({});
   const [rowError, setRowError] = useState<Record<string, string>>({});
+  const [rowOk, setRowOk] = useState<Record<string, string>>({});
+  const [rowBusy, setRowBusy] = useState<Record<string, boolean>>({});
+
+  // PATCH satu user (reset password / ubah peran). Pola error mengikuti handleDelete:
+  // baca body dengan fallback supaya respons non-JSON tidak jadi "kesalahan jaringan".
+  async function patchUser(u: UserRow, body: Record<string, string>, okMsg: string) {
+    setRowBusy((p) => ({ ...p, [u.id]: true }));
+    setRowError((p) => ({ ...p, [u.id]: "" }));
+    setRowOk((p) => ({ ...p, [u.id]: "" }));
+    try {
+      const res = await fetch(`/api/users/${u.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setRowError((p) => ({ ...p, [u.id]: data.error || `Gagal (kode ${res.status}).` }));
+        return;
+      }
+      setRowOk((p) => ({ ...p, [u.id]: okMsg }));
+      await loadUsers();
+    } catch {
+      setRowError((p) => ({ ...p, [u.id]: "Kesalahan jaringan." }));
+    } finally {
+      setRowBusy((p) => ({ ...p, [u.id]: false }));
+    }
+  }
+
+  function handleResetPassword(u: UserRow) {
+    const pw = window.prompt(`Password baru untuk ${u.email} (minimal 6 karakter):`);
+    if (pw === null) return;
+    if (pw.length < 6) {
+      setRowError((p) => ({ ...p, [u.id]: "Password minimal 6 karakter." }));
+      return;
+    }
+    patchUser(u, { password: pw }, "Password direset.");
+  }
+
+  function handleChangeRole(u: UserRow, role: string) {
+    const label = role === "founder" ? "Founder" : "Operator";
+    if (!window.confirm(`Ubah peran ${u.email} menjadi ${label}?`)) return;
+    patchUser(u, { role }, `Peran jadi ${label}.`);
+  }
 
   async function handleDelete(u: UserRow) {
     if (
@@ -196,20 +240,39 @@ export default function UsersPage() {
                     <tr key={u.id} className="border-t border-line align-top">
                       <td className="px-4 py-2.5 text-fg-2">{u.email}</td>
                       <td className="px-4 py-2.5">
-                        <span className={`badge ${u.role === "founder" ? "bg-accent/15 text-accent-hi" : "bg-ok/15 text-ok"}`}>
-                          {u.role === "founder" ? "Founder" : "Operator"}
-                        </span>
+                        <select
+                          value={u.role}
+                          onChange={(e) => handleChangeRole(u, e.target.value)}
+                          disabled={rowBusy[u.id]}
+                          className="select py-1 text-xs"
+                          aria-label={`Peran ${u.email}`}
+                        >
+                          <option value="user">Operator</option>
+                          <option value="founder">Founder</option>
+                        </select>
                       </td>
                       <td className="px-4 py-2.5 text-right">
-                        <button
-                          onClick={() => handleDelete(u)}
-                          disabled={deleting[u.id]}
-                          className="btn-danger px-2.5 py-1 text-xs"
-                        >
-                          {deleting[u.id] ? "Menghapus…" : "Hapus"}
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => handleResetPassword(u)}
+                            disabled={rowBusy[u.id]}
+                            className="btn-ghost px-2.5 py-1 text-xs"
+                          >
+                            {rowBusy[u.id] ? "Menyimpan…" : "Reset password"}
+                          </button>
+                          <button
+                            onClick={() => handleDelete(u)}
+                            disabled={deleting[u.id]}
+                            className="btn-danger px-2.5 py-1 text-xs"
+                          >
+                            {deleting[u.id] ? "Menghapus…" : "Hapus"}
+                          </button>
+                        </div>
                         {rowError[u.id] && (
                           <p className="mt-1 text-[10px] text-danger">{rowError[u.id]}</p>
+                        )}
+                        {rowOk[u.id] && (
+                          <p className="mt-1 text-[10px] text-ok">{rowOk[u.id]}</p>
                         )}
                       </td>
                     </tr>

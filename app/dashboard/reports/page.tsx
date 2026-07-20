@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
+import { reportProgress } from "@/lib/reports";
 
 // Daftar report siap-volume (~100 report/bulan): pencarian judul + filter periode/platform
 // + pagination — SEMUA di sisi server (query DB, bukan filter client) supaya tetap ringan
@@ -74,10 +75,25 @@ export default async function ReportsPage({
     skip: (page - 1) * PAGE_SIZE,
     take: PAGE_SIZE,
     include: {
-      _count: { select: { uploads: true } },
+      _count: { select: { uploads: true, insights: true, conclusions: true } },
       createdBy: { select: { email: true } },
     },
   });
+
+  // Badge diturunkan dari data (Batch C). Butuh jumlah section & platform yang BENAR-BENAR
+  // punya foto — tidak bisa dari _count. Satu groupBy untuk seluruh halaman (maks 20 report),
+  // bukan query per baris.
+  const uploadGroups = await prisma.upload.groupBy({
+    by: ["reportId", "sectionId", "platform"],
+    where: { reportId: { in: reports.map((r) => r.id) } },
+  });
+  const coverage = new Map<string, { sections: Set<string>; platforms: Set<string> }>();
+  for (const g of uploadGroups) {
+    const c = coverage.get(g.reportId) ?? { sections: new Set(), platforms: new Set() };
+    c.sections.add(g.sectionId);
+    c.platforms.add(g.platform);
+    coverage.set(g.reportId, c);
+  }
 
   const activeParams = { q, periode, platform };
 
@@ -178,17 +194,30 @@ export default async function ReportsPage({
                         {p === "shopee" ? "Shopee" : "TikTok"}
                       </span>
                     ))}
-                    <span
-                      className={`badge ${
-                        r.status === "done" || r.status === "downloaded"
-                          ? "bg-ok/15 text-ok"
-                          : r.status === "processing"
-                            ? "bg-accent/15 text-accent-hi"
-                            : "bg-warn/15 text-warn"
-                      }`}
-                    >
-                      {r.status}
-                    </span>
+                    {(() => {
+                      const cov = coverage.get(r.id);
+                      const p = reportProgress({
+                        status: r.status,
+                        uploadCount: r._count.uploads,
+                        sectionsWithPhotos: cov?.sections.size ?? 0,
+                        insightCount: r._count.insights,
+                        platformsWithPhotos: cov?.platforms.size ?? 0,
+                        conclusionCount: r._count.conclusions,
+                      });
+                      return (
+                        <span
+                          className={`badge ${
+                            p.tone === "ok"
+                              ? "bg-ok/15 text-ok"
+                              : p.tone === "warn"
+                                ? "bg-warn/15 text-warn"
+                                : "bg-surface-2 text-fg-3 border border-line"
+                          }`}
+                        >
+                          {p.label}
+                        </span>
+                      );
+                    })()}
                   </div>
                   <p className="mt-2 text-sm font-medium text-fg">
                     {r.brandName ?? "Tanpa nama brand"}

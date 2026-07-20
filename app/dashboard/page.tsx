@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import ChangePasswordCard from "./ChangePasswordCard";
 import { getSession } from "@/lib/session";
 import LogoutButton from "./LogoutButton";
 
@@ -193,6 +194,8 @@ export default async function DashboardPage() {
             </a>
           ))}
         </div>
+
+        <ChangePasswordCard userId={session.userId} />
       </main>
     </div>
   );
