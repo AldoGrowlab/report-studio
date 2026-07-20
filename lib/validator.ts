@@ -6,7 +6,7 @@ import {
   pointsOutputRule,
   renderStoredPoints,
 } from "@/lib/analyst";
-import { llmBackend } from "@/lib/llm";
+import { llmBackend, anthropicClient, LLM_MAX_TOKENS } from "@/lib/llm";
 
 // Tahap 7a — Validator, peran pertama: MENULIS kesimpulan per platform (DESIGN
 // §Validator & Kesimpulan). Membaca SEMUA insight section satu platform lalu merangkumnya
@@ -46,8 +46,7 @@ const KB_EMPTY = "(belum diisi — pakai penilaian umum merangkum yang baik)";
 
 // ---- Claude Opus 4.8 (structured output, pola sama dgn lib/analyst.ts) ----
 async function concludeWithClaude(input: ValidatorInput): Promise<string[]> {
-  const { default: Anthropic } = await import("@anthropic-ai/sdk");
-  const client = new Anthropic(); // membaca ANTHROPIC_API_KEY dari env
+  const client = await anthropicClient();
 
   const platformLabel = input.platform === "shopee" ? "Shopee" : "TikTok";
 
@@ -76,7 +75,7 @@ async function concludeWithClaude(input: ValidatorInput): Promise<string[]> {
 
   const response = await client.messages.create({
     model: MODEL,
-    max_tokens: 16000,
+    max_tokens: LLM_MAX_TOKENS,
     thinking: { type: "adaptive" },
     output_config: { format: { type: "json_schema", schema: POINTS_SCHEMA } },
     messages: [{ role: "user", content: instruction }],
@@ -135,8 +134,7 @@ export type ConsistencyOutcome = {
 };
 
 async function checkWithClaude(input: ConsistencyInput): Promise<ConsistencyIssue[]> {
-  const { default: Anthropic } = await import("@anthropic-ai/sdk");
-  const client = new Anthropic();
+  const client = await anthropicClient();
 
   const platformLabel = input.platform === "shopee" ? "Shopee" : "TikTok";
   const numbered = input.sections
@@ -189,7 +187,7 @@ async function checkWithClaude(input: ConsistencyInput): Promise<ConsistencyIssu
 
   const response = await client.messages.create({
     model: MODEL,
-    max_tokens: 16000,
+    max_tokens: LLM_MAX_TOKENS,
     thinking: { type: "adaptive" },
     output_config: { format: { type: "json_schema", schema } },
     messages: [{ role: "user", content: instruction }],

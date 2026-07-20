@@ -5,7 +5,7 @@ import {
   SUB_POINT_PREFIX,
   type StructuredPoint,
 } from "@/lib/insight-format";
-import { llmBackend } from "@/lib/llm";
+import { llmBackend, anthropicClient, LLM_MAX_TOKENS } from "@/lib/llm";
 
 // Tahap 6a — Analyst dasar (satu periode, tanpa perbandingan antar bulan).
 // Menarik angka TERKINI dari Extraction (single source of truth) + KB analisa section,
@@ -210,8 +210,7 @@ function sourceRule(input: AnalystInput, multiSource: boolean): string {
 
 // ---- Claude Opus 4.8 (structured output, pola sama dgn lib/extractor.ts) ----
 async function analyzeWithClaude(input: AnalystInput): Promise<string[]> {
-  const { default: Anthropic } = await import("@anthropic-ai/sdk");
-  const client = new Anthropic(); // membaca ANTHROPIC_API_KEY dari env
+  const client = await anthropicClient();
 
   const platformLabel = input.platform === "shopee" ? "Shopee" : "TikTok";
   const multiSource = input.sources.length > 1;
@@ -242,7 +241,7 @@ async function analyzeWithClaude(input: AnalystInput): Promise<string[]> {
 
   const response = await client.messages.create({
     model: MODEL,
-    max_tokens: 16000,
+    max_tokens: LLM_MAX_TOKENS,
     thinking: { type: "adaptive" },
     output_config: { format: { type: "json_schema", schema: POINTS_SCHEMA } },
     messages: [{ role: "user", content: instruction }],
@@ -308,8 +307,7 @@ async function reviseWithClaude(
   existingPoints: string[],
   instructions: string[]
 ): Promise<string[]> {
-  const { default: Anthropic } = await import("@anthropic-ai/sdk");
-  const client = new Anthropic();
+  const client = await anthropicClient();
 
   const platformLabel = input.platform === "shopee" ? "Shopee" : "TikTok";
   const multiSource = input.sources.length > 1;
@@ -347,7 +345,7 @@ async function reviseWithClaude(
 
   const response = await client.messages.create({
     model: MODEL,
-    max_tokens: 16000,
+    max_tokens: LLM_MAX_TOKENS,
     thinking: { type: "adaptive" },
     output_config: { format: { type: "json_schema", schema: POINTS_SCHEMA } },
     messages: [{ role: "user", content: instruction }],

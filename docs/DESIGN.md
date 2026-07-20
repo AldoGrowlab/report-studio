@@ -559,6 +559,15 @@ Sudah DIPERBAIKI (K = kritis, P = penting):
   dan pelewatannya DITANDAI sebagai flag + `consistency.skipped` — bukan disembunyikan.
   (c) `S3Client` dipakai ulang (dulu `new S3Client` tiap panggilan → report 30 foto = 30
   klien baru, nol penggunaan ulang koneksi).
+- **Batch E4 audit (Jul 2026)** — batas waktu LLM. `new Anthropic()` tanpa opsi memakai
+  default SDK: timeout **10 menit**, `maxRetries` 2, dan timeout ikut di-retry — satu
+  request HTTP bisa hidup ~30 menit sementara browser operator sudah lama menyerah dan
+  server terus membakar token. Kini semua pemanggil lewat `anthropicClient()` di
+  `lib/llm.ts` dengan timeout 180 dtk + 1 retry (terburuk 6 menit), klien dipakai ulang,
+  dan `max_tokens` jadi satu konstanta `LLM_MAX_TOKENS`.
+  > Jangan naikkan `LLM_MAX_TOKENS` di atas ~21.300: SDK menolak permintaan NON-streaming
+  > yang perkiraan durasinya melewati 10 menit ("Streaming is required") — semua jalur LLM
+  > akan gagal keras seketika. Kalau perlu keluaran lebih panjang, pindah ke streaming.
 - **P4** Hapus section/user ber-relasi → pre-check count = 409 berpesan (relasi RESTRICT =
   Postgres 23001 di-surface Prisma sbg UnknownRequestError, bukan P2003 — jangan andalkan
   kode error).

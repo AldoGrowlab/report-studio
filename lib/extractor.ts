@@ -1,6 +1,6 @@
 import type { MetricType, ExtractionStatus, Platform } from "@prisma/client";
 import type { ImageBytes } from "@/lib/storage";
-import { llmBackend } from "@/lib/llm";
+import { llmBackend, anthropicClient, LLM_MAX_TOKENS } from "@/lib/llm";
 
 // Metrik yang diharapkan section (memandu extractor).
 export type ExpectedMetric = { key: string; label: string; type: MetricType };
@@ -179,8 +179,7 @@ async function extractWithClaude(
   image: ImageBytes,
   context: { sectionName: string; platform: Platform }
 ): Promise<ExtractionResult[]> {
-  const { default: Anthropic } = await import("@anthropic-ai/sdk");
-  const client = new Anthropic(); // membaca ANTHROPIC_API_KEY dari env
+  const client = await anthropicClient();
 
   const base64 = Buffer.from(image.bytes).toString("base64");
   const mediaType = (
@@ -228,7 +227,7 @@ async function extractWithClaude(
 
   const response = await client.messages.create({
     model: MODEL,
-    max_tokens: 16000,
+    max_tokens: LLM_MAX_TOKENS,
     thinking: { type: "adaptive" },
     output_config: { format: { type: "json_schema", schema } },
     messages: [
