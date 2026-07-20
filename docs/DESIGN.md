@@ -547,6 +547,18 @@ Sudah DIPERBAIKI (K = kritis, P = penting):
   > Batas yang diakui: pembatasan `reportPeriod` MEMPERSEMPIT ruang prompt injection ke
   > Validator, tidak menutupnya — kalimat satu baris <60 karakter masih lewat. Memadai
   > untuk alat internal dengan operator tepercaya; kalau berubah, ganti ke allowlist format.
+- **Batch E3 audit (Jul 2026)** — integritas & performa:
+  (a) indeks FK `Extraction.uploadId` dan `Flag.reportId` (migrasi `add_fk_indexes`) —
+  Postgres tidak membuatnya otomatis; Extraction tabel terbesar dan kolom itu dikenai
+  `deleteMany` tiap ekstrak-ulang, `Flag.reportId` tiap generate kesimpulan.
+  (b) **Lost update ditutup**: route kesimpulan membaca insight → menjalankan rantai LLM
+  (puluhan detik–menit) → menulis balik. Kalau operator lain menekan "Generate ulang
+  insight" di sela itu, penulisan tanpa syarat MENIMPA hasil barunya dengan revisi atas
+  versi lama, dan jejak revisi justru menyembunyikan bahwa versi baru pernah ada. Kini
+  `updateMany` bersyarat `updatedAt` snapshot: gagal tenang (count 0), revisi dilewati,
+  dan pelewatannya DITANDAI sebagai flag + `consistency.skipped` — bukan disembunyikan.
+  (c) `S3Client` dipakai ulang (dulu `new S3Client` tiap panggilan → report 30 foto = 30
+  klien baru, nol penggunaan ulang koneksi).
 - **P4** Hapus section/user ber-relasi → pre-check count = 409 berpesan (relasi RESTRICT =
   Postgres 23001 di-surface Prisma sbg UnknownRequestError, bukan P2003 — jangan andalkan
   kode error).

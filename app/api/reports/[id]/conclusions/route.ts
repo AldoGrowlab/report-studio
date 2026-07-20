@@ -102,6 +102,7 @@ export async function POST(
   type PendingRevision = {
     sectionIndex: number;
     insightId: string;
+    insightUpdatedAt: Date;
     sectionId: string;
     pointsBefore: string[];
     pointsAfter: string[];
@@ -144,6 +145,8 @@ export async function POST(
     pendingRevisions.push({
       sectionIndex,
       insightId: item.insight.id,
+      // Cap waktu saat insight ini DIBACA — dipakai sebagai syarat penulisan (lihat bawah).
+      insightUpdatedAt: item.insight.updatedAt,
       sectionId: item.insight.sectionId,
       pointsBefore: item.points,
       pointsAfter: revised.points,
@@ -167,11 +170,22 @@ export async function POST(
 
   // Simpan jejak revisi (before/after/alasan — tidak ada perubahan diam-diam) + update poin.
   const savedRevisions = [];
+  const skippedRevisions: string[] = [];
   for (const rev of pendingRevisions) {
-    await prisma.insight.update({
-      where: { id: rev.insightId },
+    // PEMBARUAN BERSYARAT. Route ini membaca insight, lalu menjalankan rantai panggilan
+    // LLM yang bisa makan puluhan detik sampai menit, baru menulis balik. Kalau di sela
+    // itu ada operator lain menekan "Generate ulang insight", penulisan tanpa syarat akan
+    // MENIMPA hasil barunya dengan revisi atas versi lama — dan jejak revisi yang dicatat
+    // justru menyembunyikan bahwa versi baru itu pernah ada. Syarat updatedAt membuat
+    // penulisan gagal dengan tenang (count 0) alih-alih menghapus pekerjaan orang lain.
+    const res = await prisma.insight.updateMany({
+      where: { id: rev.insightId, updatedAt: rev.insightUpdatedAt },
       data: { points: rev.pointsAfter },
     });
+    if (res.count === 0) {
+      skippedRevisions.push(rev.sectionId);
+      continue;
+    }
     const row = await prisma.insightRevision.create({
       data: {
         insightId: rev.insightId,
@@ -192,6 +206,16 @@ export async function POST(
   });
   const flagData = [
     ...escalated.map((e) => ({ sectionIndex: e.sectionIndex, note: e.note })),
+    // Revisi yang dibatalkan karena insight-nya berubah saat proses berjalan: ditandai,
+    // bukan disembunyikan — operator perlu tahu ada koreksi yang tidak jadi diterapkan.
+    ...pendingRevisions
+      .filter((r) => skippedRevisions.includes(r.sectionId))
+      .map((r) => ({
+        sectionIndex: r.sectionIndex,
+        note:
+          "Revisi Validator dilewati: insight section ini diubah operator lain saat " +
+          "kesimpulan sedang diproses. Poin terbaru dipertahankan — periksa lalu jalankan ulang bila perlu.",
+      })),
     ...remaining.map((i) => ({
       sectionIndex: i.sectionIndex,
       note: `[${i.kind}] ${i.finding} (masih ditemukan setelah 1x revisi)`,
@@ -274,6 +298,8 @@ export async function POST(
       issuesFound: issuesFound.length,
       revised: savedRevisions.length,
       escalated: flags.length,
+      // >0 = ada revisi yang tidak jadi ditulis karena datanya berubah di tengah jalan.
+      skipped: skippedRevisions.length,
     },
   });
 }

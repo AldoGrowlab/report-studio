@@ -73,18 +73,27 @@ function r2Config() {
 
 function createR2Storage(cfg: NonNullable<ReturnType<typeof r2Config>>): Storage {
   // Import dinamis: SDK AWS hanya dimuat kalau R2 benar-benar dipakai.
+  // Klien DIPAKAI ULANG (dulu `new S3Client` tiap panggilan): route pptx membaca foto satu
+  // per satu, jadi report 30 foto membuat 30 klien baru — 30 kali resolusi kredensial dan
+  // nol penggunaan ulang koneksi HTTP. Promise-nya di-cache supaya panggilan bersamaan
+  // tetap berbagi satu instance.
+  let clientPromise: Promise<import("@aws-sdk/client-s3").S3Client> | null = null;
   async function client() {
-    const { S3Client } = await import("@aws-sdk/client-s3");
-    return new S3Client({
-      region: "auto", // R2 mengabaikan region; "auto" sesuai dok R2
-      endpoint: cfg.endpoint,
-      credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey },
-      // AWS SDK v3 baru menambahkan checksum flexible (CRC32) secara default —
-      // Cloudflare R2 menolaknya dengan 400 InvalidArgument. Batasi checksum ke
-      // "hanya saat operasi mewajibkan" supaya kompatibel dengan R2.
-      requestChecksumCalculation: "WHEN_REQUIRED",
-      responseChecksumValidation: "WHEN_REQUIRED",
-    });
+    if (clientPromise) return clientPromise;
+    clientPromise = (async () => {
+      const { S3Client } = await import("@aws-sdk/client-s3");
+      return new S3Client({
+        region: "auto", // R2 mengabaikan region; "auto" sesuai dok R2
+        endpoint: cfg.endpoint,
+        credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey },
+        // AWS SDK v3 baru menambahkan checksum flexible (CRC32) secara default —
+        // Cloudflare R2 menolaknya dengan 400 InvalidArgument. Batasi checksum ke
+        // "hanya saat operasi mewajibkan" supaya kompatibel dengan R2.
+        requestChecksumCalculation: "WHEN_REQUIRED",
+        responseChecksumValidation: "WHEN_REQUIRED",
+      });
+    })();
+    return clientPromise;
   }
 
   return {

@@ -175,6 +175,11 @@ model Extraction {
   updatedAt         DateTime         @updatedAt
 
   upload Upload @relation(fields: [uploadId], references: [id], onDelete: Cascade)
+
+  // Postgres tidak mengindeks kolom FK secara otomatis. Extraction adalah tabel terbesar
+  // (~100 report x ~10 foto x ~6 metrik/bulan), dan uploadId dipakai terus-menerus oleh
+  // deleteMany saat ekstrak-ulang serta include saat menyusun sumber Analyst.
+  @@index([uploadId])
 }
 
 // Tahap 6a — insight Analyst per (report, section). Generate ulang = replace (upsert).
@@ -293,4 +298,7 @@ model Flag {
   createdAt DateTime     @default(now())
 
   report Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  // Dikenai deleteMany di SETIAP generate kesimpulan.
+  @@index([reportId])
 }
