@@ -143,6 +143,85 @@ function containRect(
   return { x: box.x + (box.w - w) / 2, y, w, h };
 }
 
+// ---- Muat-tidaknya teks: DIHITUNG DI KODE, bukan diserahkan ke `fit: "shrink"` ----
+// pptxgenjs menulis <a:normAutofit/> telanjang TANPA fontScale (baris fontScale-nya sengaja
+// dikomentari di sumbernya), dan PowerPoint baru menghitung skala saat teks diedit MANUAL.
+// Akibatnya di file yang dikirim ke klien teks dirender ukuran penuh dan tumpah keluar slide
+// — terukur 13,61" teks di kotak 5,40" untuk rekomendasi 50 baris. Karena itu ukuran font
+// dipilih sendiri: perkirakan tinggi, turunkan tingkat sampai muat.
+
+// Lebar rata-rata karakter ≈ 0,5 × ukuran font untuk huruf sans. Sengaja sedikit boros
+// (0,52) supaya perkiraan cenderung MELEBIHKAN — lebih baik font mengecil sedikit lebih
+// cepat daripada teks tumpah.
+const CHAR_WIDTH_RATIO = 0.52;
+const LINE_HEIGHT_RATIO = 1.22; // tinggi baris relatif ukuran font
+const PT_PER_INCH = 72;
+
+// Perkiraan tinggi (inci) satu blok teks pada ukuran font tertentu.
+function estimateTextHeight(
+  lines: string[],
+  fontSize: number,
+  boxW: number,
+  paraSpaceAfterPt = 0
+): number {
+  const charsPerLine = Math.max(
+    1,
+    Math.floor((boxW * PT_PER_INCH) / (fontSize * CHAR_WIDTH_RATIO))
+  );
+  let wrapped = 0;
+  for (const line of lines) {
+    // Baris kosong tetap memakan satu baris (dipertahankan sebagai jarak antar blok).
+    wrapped += Math.max(1, Math.ceil(line.length / charsPerLine));
+  }
+  const lineH = (fontSize * LINE_HEIGHT_RATIO) / PT_PER_INCH;
+  const spacing = (paraSpaceAfterPt / PT_PER_INCH) * lines.length;
+  return wrapped * lineH + spacing;
+}
+
+// Margin aman: perkiraan lebar karakter tak pernah persis (font berbeda, kerning, angka
+// vs huruf). Isi kotak hanya sampai 92% supaya selisih kecil tidak langsung jadi luapan.
+const FILL_SAFETY = 0.92;
+
+// Ukuran font terbesar dari `sizes` (urut besar→kecil) yang muat di kotak. Kalau tak ada
+// yang muat, kembalikan yang terkecil — pemanggil memutuskan apakah memecah ke slide lain.
+function fitFontSize(
+  lines: string[],
+  box: { w: number; h: number },
+  sizes: number[],
+  paraSpaceAfterPt = 0
+): number {
+  const limit = box.h * FILL_SAFETY;
+  for (const size of sizes) {
+    if (estimateTextHeight(lines, size, box.w, paraSpaceAfterPt) <= limit) return size;
+  }
+  return sizes[sizes.length - 1];
+}
+
+// Pecah baris jadi beberapa halaman yang masing-masing muat pada `fontSize`.
+function paginateLines(
+  lines: string[],
+  box: { w: number; h: number },
+  fontSize: number,
+  paraSpaceAfterPt = 0
+): string[][] {
+  const pages: string[][] = [];
+  let current: string[] = [];
+  for (const line of lines) {
+    const next = [...current, line];
+    if (
+      current.length > 0 &&
+      estimateTextHeight(next, fontSize, box.w, paraSpaceAfterPt) > box.h * FILL_SAFETY
+    ) {
+      pages.push(current);
+      current = [line];
+    } else {
+      current = next;
+    }
+  }
+  if (current.length > 0) pages.push(current);
+  return pages.length > 0 ? pages : [[]];
+}
+
 type Slide = import("pptxgenjs").default.Slide;
 
 // Warna teks di atas latar primer — kontras SELALU dijaga: putih hanya kalau primer
@@ -181,12 +260,17 @@ function addSlideHeader(
     w: PAGE.w - 2 * MARGIN - 0.24,
     h: HEADER_H,
     fontFace: theme.headingFont,
-    fontSize: SIZES.titleXL,
+    // Dihitung di kode: nama section panjang harus tetap SATU baris di dalam header,
+    // kalau tidak ia menembus garis pemisah di bawahnya. `fit: "shrink"` tidak bekerja.
+    fontSize: fitFontSize(
+      [text.toUpperCase()],
+      { w: PAGE.w - 2 * MARGIN - 0.24, h: HEADER_H },
+      [SIZES.titleXL, 22, 20, 18, 16, 14]
+    ),
     bold: true,
     charSpacing: 1,
     color: onDark ? onPrimaryText(theme) : theme.primary,
     valign: "middle",
-    fit: "shrink", // nama section panjang menyusut, tidak terpotong
   });
   slide.addShape("rect", {
     x: MARGIN,
@@ -283,6 +367,15 @@ function addPointsText(
   textColor: string = TEXT_BODY
 ) {
   const { points, numbers } = insight;
+  // Ukuran font dihitung di kode — `fit: "shrink"` tidak menghasilkan fontScale apa pun,
+  // jadi 8 poin panjang dulu dirender ukuran penuh dan menembus footer di file klien.
+  // Lebar efektif dikurangi indent bullet (~0,25") supaya perkiraan tidak terlalu optimis.
+  const bodySize = fitFontSize(
+    points.map((pt) => parsePointLine(pt).text),
+    { w: box.w - 2 * PANEL_PAD - 0.25, h: box.h - 2 * (PANEL_PAD * 0.7) },
+    [SIZES.body, 12, 11, 10, 9],
+    8
+  );
   // Fase C: baris ber-prefix tab = SUB-POIN (satu tingkat) — paragraf indentLevel 1
   // dengan bullet sekunder (en dash) dan huruf sedikit lebih kecil. splitByNumbers
   // dipanggil pada teks yang sudah dilepas prefix — bold per baris tetap jalan.
@@ -293,7 +386,7 @@ function addPointsText(
       text: seg.text,
       options: {
         bold: seg.bold,
-        fontSize: depth === 1 ? SIZES.body - 1 : SIZES.body,
+        fontSize: depth === 1 ? bodySize - 1 : bodySize,
         // Properti paragraf (bullet/indent/jarak) menempel di run PERTAMA tiap baris.
         ...(si === 0
           ? {
@@ -317,12 +410,11 @@ function addPointsText(
     w: box.w - 2 * PANEL_PAD,
     h: box.h - 2 * (PANEL_PAD * 0.7),
     fontFace: theme.bodyFont,
-    fontSize: SIZES.body,
+    fontSize: bodySize,
     color: textColor,
     valign: "top",
     align: "left",
     paraSpaceAfter: 8, // jarak antar poin
-    fit: "shrink", // teks panjang menyusut agar muat, bukan terpotong
   });
 }
 
@@ -363,17 +455,29 @@ export async function buildReportPptx(
   // cover report (1) + per blok [pembatas + section + kesimpulan + rekomendasi?] + thank you (1).
   // Pecah section berfoto banyak SEBELUM menghitung total halaman, supaya nomor "n / total"
   // ikut menghitung slide lanjutan (pageTotal memakai sections.length yang sama).
-  const blocks = data.blocks.map((b) => ({
-    ...b,
-    sections: b.sections.flatMap(splitSectionPhotos),
-  }));
+  // Rekomendasi = ketikan bebas user, panjangnya tak terbatas. Ukuran font dipilih dulu
+  // (13→12→11→10), lalu kalau di 10pt pun tidak muat, dipecah ke slide "(lanjutan)".
+  const RECO_SIZES = [SIZES.body, 12, 11, 10];
+  const recoInner = {
+    w: PAGE.w - 2 * MARGIN - 2 * PANEL_PAD,
+    h: CONTENT_H - 2 * (PANEL_PAD * 0.7),
+  };
+
+  const blocks = data.blocks.map((b) => {
+    const raw = b.recommendation?.trim() ? b.recommendation.replace(/\r\n/g, "\n").split("\n") : [];
+    const recoFont = raw.length > 0 ? fitFontSize(raw, recoInner, RECO_SIZES, 4) : SIZES.body;
+    const recoPages = raw.length > 0 ? paginateLines(raw, recoInner, recoFont, 4) : [];
+    return {
+      ...b,
+      sections: b.sections.flatMap(splitSectionPhotos),
+      recoPages,
+      recoFont,
+    };
+  });
 
   const pageTotal =
     1 +
-    blocks.reduce(
-      (n, b) => n + 1 + b.sections.length + 1 + (b.recommendation ? 1 : 0),
-      0
-    ) +
+    blocks.reduce((n, b) => n + 1 + b.sections.length + 1 + b.recoPages.length, 0) +
     1;
   let pageNo = 0;
 
@@ -432,9 +536,14 @@ export async function buildReportPptx(
       h: 0.55,
       align: "center",
       fontFace: theme.bodyFont,
-      fontSize: SIZES.coverSub,
+      // Dihitung di kode (`fit: "shrink"` no-op): nama brand panjang mengecil sampai
+      // muat satu baris subjudul, tidak meluber melewati lebar cover.
+      fontSize: fitFontSize(
+        [data.brandName ? `${data.brandName} · ${data.reportPeriod}` : data.reportPeriod],
+        { w: PAGE.w - 2 * MARGIN, h: 0.55 },
+        [SIZES.coverSub, 16, 14, 12, 11]
+      ),
       color: onPrimarySubtle(theme),
-      fit: "shrink", // nama brand panjang menyusut, tidak terpotong
     }
   );
   cover.addText(
@@ -607,17 +716,23 @@ export async function buildReportPptx(
     // --- Slide REKOMENDASI & ACTION PLAN (Fase A): ketikan user APA ADANYA — per baris
     // jadi paragraf (baris kosong dipertahankan), TANPA bullet paksa, TANPA bold otomatis.
     // Kosong = slide tidak dibuat (sudah disaring pemanggil; guard defensif di sini).
-    if (block.recommendation && block.recommendation.trim().length > 0) {
+    for (let ri = 0; ri < block.recoPages.length; ri++) {
+      const lines = block.recoPages[ri];
       pageNo++;
       const reco = pptx.addSlide();
       // Fase B: senada dengan Kesimpulan — latar primer + kartu putih; teks user tetap
       // APA ADANYA (per baris jadi paragraf, tanpa bullet paksa, tanpa bold otomatis).
       reco.background = { color: theme.primary };
-      addSlideHeader(reco, "Rekomendasi & Action Plan", theme, accent, true);
+      addSlideHeader(
+        reco,
+        ri === 0 ? "Rekomendasi & Action Plan" : "Rekomendasi & Action Plan (lanjutan)",
+        theme,
+        accent,
+        true
+      );
       addFooter(reco, footerLabel, pageNo, pageTotal, theme, true);
       const recoBox = { x: MARGIN, y: CONTENT_Y, w: PAGE.w - 2 * MARGIN, h: CONTENT_H };
       addPointsPanel(reco, recoBox, accent, "FFFFFF");
-      const lines = block.recommendation.replace(/\r\n/g, "\n").split("\n");
       const runs = lines.map((line, i) => ({
         // Baris kosong tetap jadi paragraf (spasi) supaya jarak antar blok terjaga.
         text: line === "" ? " " : line,
@@ -629,12 +744,12 @@ export async function buildReportPptx(
         w: recoBox.w - 2 * PANEL_PAD,
         h: recoBox.h - 2 * (PANEL_PAD * 0.7),
         fontFace: theme.bodyFont,
-        fontSize: SIZES.body,
+        // Ukuran dihitung di kode (lihat fitFontSize) — `fit: "shrink"` tidak berfungsi.
+        fontSize: block.recoFont,
         color: TEXT_BODY,
         valign: "top",
         align: "left",
         paraSpaceAfter: 4,
-        fit: "shrink",
       });
     }
   }

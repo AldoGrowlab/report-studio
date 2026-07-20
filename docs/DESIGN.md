@@ -524,6 +524,17 @@ Sudah DIPERBAIKI (K = kritis, P = penting):
   > Pelajaran yang dicatat: `tsc` TIDAK menangkap TDZ ketika referensi maju berada di dalam
   > callback (`platforms.some((p) => recoDirty(p))` sebelum `recoDirty` dideklarasikan).
   > Perubahan komponen client WAJIB diverifikasi dengan benar-benar merender halamannya.
+- **Batch E1 audit (Jul 2026)** — `fit: "shrink"` DIBUANG dari seluruh `lib/ppt.ts`.
+  pptxgenjs menulis `<a:normAutofit/>` telanjang TANPA `fontScale` (barisnya sengaja
+  dikomentari di sumber library), dan PowerPoint baru menghitung skala saat teks diedit
+  MANUAL — jadi di file yang dikirim ke klien teks dirender ukuran penuh dan TUMPAH keluar
+  slide (terukur 13,61" teks di kotak 5,40" untuk rekomendasi 50 baris). Penggantinya
+  deterministik, sejalan prinsip "tata letak dihitung di kode": `estimateTextHeight` +
+  `fitFontSize` menurunkan ukuran bertingkat (judul section 24→14, subjudul cover 18→11,
+  poin insight 13→9, rekomendasi 13→10), dan rekomendasi yang tetap tak muat di ukuran
+  terkecil dipecah ke slide "Rekomendasi & Action Plan (lanjutan)" — dihitung SEBELUM
+  `pageTotal` sehingga penomoran halaman tetap benar. Kotak diisi maksimal `FILL_SAFETY`
+  92% karena perkiraan lebar karakter tak pernah persis.
 - **P4** Hapus section/user ber-relasi → pre-check count = 409 berpesan (relasi RESTRICT =
   Postgres 23001 di-surface Prisma sbg UnknownRequestError, bukan P2003 — jangan andalkan
   kode error).
