@@ -180,7 +180,17 @@ export default async function ReportDetailPage({
                   {p === "shopee" ? "Shopee" : "TikTok"}
                 </span>
               ))}
-              <span className="badge bg-warn/15 text-warn">{report.status}</span>
+              <span
+                className={`badge ${
+                  report.status === "done" || report.status === "downloaded"
+                    ? "bg-ok/15 text-ok"
+                    : report.status === "processing"
+                      ? "bg-accent/15 text-accent-hi"
+                      : "bg-warn/15 text-warn"
+                }`}
+              >
+                {report.status}
+              </span>
             </div>
             <h1 className="mt-1.5 text-2xl font-semibold">
               {report.brandName ?? "Tanpa nama brand"}

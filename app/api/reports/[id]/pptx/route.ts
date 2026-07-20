@@ -141,7 +141,10 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/reports/[id
     };
   }
 
-  const buffer = await buildReportPptx({ reportPeriod: report.reportPeriod, blocks }, theme);
+  const buffer = await buildReportPptx(
+    { reportPeriod: report.reportPeriod, brandName: report.brandName, blocks },
+    theme
+  );
 
   // Audit P5: transisi status saat PPT PERTAMA kali diunduh (draft -> downloaded).
   // Hanya maju dari draft; tidak menimpa status lain. Efek samping pada GET disengaja
@@ -151,7 +154,9 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/reports/[id
   }
 
   // Nama file: fallback ASCII + filename* UTF-8 (periode bisa mengandung karakter non-ASCII).
-  const baseName = `Laporan Performa ${report.reportPeriod}.pptx`;
+  const baseName = report.brandName
+    ? `Laporan Performa ${report.brandName} ${report.reportPeriod}.pptx`
+    : `Laporan Performa ${report.reportPeriod}.pptx`;
   const asciiName = baseName.replace(/[^\x20-\x7E]/g, "_").replace(/"/g, "'");
   return new NextResponse(new Uint8Array(buffer), {
     headers: {

@@ -42,7 +42,15 @@ export default async function ReportsPage({
   // MODEL B (Jul 2026): semua akun terautentikasi melihat SEMUA report — operator
   // bekerja bergantian pada report yang sama (lihat aturan di lib/reports.ts).
   const where: Prisma.ReportWhereInput = {
-    ...(q ? { reportPeriod: { contains: q, mode: "insensitive" } } : {}),
+    // Pencarian mencakup nama brand DAN periode (brand ditambahkan Jul 2026).
+    ...(q
+      ? {
+          OR: [
+            { brandName: { contains: q, mode: "insensitive" as const } },
+            { reportPeriod: { contains: q, mode: "insensitive" as const } },
+          ],
+        }
+      : {}),
     ...(periode ? { reportPeriod: periode } : {}),
     ...(platform ? { platforms: { has: platform } } : {}),
   };
@@ -102,7 +110,7 @@ export default async function ReportsPage({
             type="text"
             name="q"
             defaultValue={q}
-            placeholder="Cari judul report…"
+            placeholder="Cari nama brand atau periode…"
             className="input min-w-40 flex-1"
           />
           <select
@@ -172,7 +180,7 @@ export default async function ReportsPage({
                     ))}
                     <span
                       className={`badge ${
-                        r.status === "done"
+                        r.status === "done" || r.status === "downloaded"
                           ? "bg-ok/15 text-ok"
                           : r.status === "processing"
                             ? "bg-accent/15 text-accent-hi"

@@ -625,6 +625,58 @@ export default function UploadManager({
   // --- Unduh PPT (Tahap 8) ---
   // Peringatan ringan sebelum generate: section berfoto yang belum punya insight akan
   // tampil foto saja — memberi tahu, TIDAK menghalangi (report selalu bisa jadi).
+  // Unduh lewat fetch+blob (bukan window.location) supaya error server tampil DI DALAM
+  // aplikasi, bukan memindahkan user ke halaman JSON mentah.
+  const [pptxLoading, setPptxLoading] = useState(false);
+  const [pptxError, setPptxError] = useState("");
+
+  // Ambil nama file dari Content-Disposition (server sudah menyusunnya); fallback aman.
+  function filenameFromDisposition(header: string | null): string {
+    if (header) {
+      const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(header);
+      if (utf8?.[1]) {
+        try {
+          return decodeURIComponent(utf8[1]);
+        } catch {
+          /* pakai fallback di bawah */
+        }
+      }
+      const plain = /filename="([^"]+)"/i.exec(header);
+      if (plain?.[1]) return plain[1];
+    }
+    return "Laporan Performa.pptx";
+  }
+
+  async function runPptxDownload() {
+    setPptxLoading(true);
+    setPptxError("");
+    try {
+      const res = await fetch(`/api/reports/${reportId}/pptx`);
+      if (res.status === 403) {
+        router.push("/login");
+        return;
+      }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setPptxError(data.error || "Gagal menyiapkan PPT. Coba lagi.");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filenameFromDisposition(res.headers.get("Content-Disposition"));
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setPptxError("Kesalahan jaringan saat mengunduh PPT.");
+    } finally {
+      setPptxLoading(false);
+    }
+  }
+
   function downloadPptx() {
     const sectionIdsWithPhotos = [...new Set(saved.map((u) => u.sectionId))];
     const noInsight = sectionIdsWithPhotos.filter((id) => !insights[id]);
@@ -658,7 +710,7 @@ export default function UploadManager({
       const ok = window.confirm(`${warnings.join("\n\n")}\n\nLanjut unduh PPT?`);
       if (!ok) return;
     }
-    window.location.href = `/api/reports/${reportId}/pptx`;
+    void runPptxDownload();
   }
 
   const statusBadge: Record<ExtractionStatus, string> = {
@@ -855,13 +907,19 @@ export default function UploadManager({
               </button>
               <button
                 onClick={downloadPptx}
+                disabled={pptxLoading}
                 className="btn-primary px-3 py-1.5 text-xs"
               >
-                Unduh PPT
+                {pptxLoading ? "Menyiapkan…" : "Unduh PPT"}
               </button>
             </div>
           )}
         </div>
+        {pptxError && (
+          <p className="mt-2 rounded-[10px] border border-danger/25 bg-danger/10 px-3 py-2 text-xs text-danger">
+            {pptxError}
+          </p>
+        )}
         {saved.length === 0 ? (
           <p className="mt-2 text-sm text-fg-3">Belum ada foto tersimpan.</p>
         ) : (

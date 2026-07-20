@@ -99,6 +99,8 @@ export type PptBlock = {
 
 export type PptReportData = {
   reportPeriod: string;
+  // Nama brand/toko yang dilaporkan — tampil di cover. null = report lama tanpa brand.
+  brandName?: string | null;
   blocks: PptBlock[]; // urutan blok sudah ditentukan pemanggil (Shopee dulu, lalu TikTok)
 };
 
@@ -379,16 +381,21 @@ export async function buildReportPptx(
     charSpacing: 3,
     color: onPrimaryText(theme),
   });
-  cover.addText(data.reportPeriod, {
-    x: MARGIN,
-    y: COVER_BAND_Y + 1.25,
-    w: PAGE.w - 2 * MARGIN,
-    h: 0.55,
-    align: "center",
-    fontFace: theme.bodyFont,
-    fontSize: SIZES.coverSub,
-    color: onPrimarySubtle(theme),
-  });
+  // Brand (kalau ada) + periode di satu baris subjudul cover.
+  cover.addText(
+    data.brandName ? `${data.brandName} · ${data.reportPeriod}` : data.reportPeriod,
+    {
+      x: MARGIN,
+      y: COVER_BAND_Y + 1.25,
+      w: PAGE.w - 2 * MARGIN,
+      h: 0.55,
+      align: "center",
+      fontFace: theme.bodyFont,
+      fontSize: SIZES.coverSub,
+      color: onPrimarySubtle(theme),
+      fit: "shrink", // nama brand panjang menyusut, tidak terpotong
+    }
+  );
   cover.addText(
     data.blocks.map((b) => PLATFORM_LABEL[b.platform].toUpperCase()).join("  ·  "),
     {
