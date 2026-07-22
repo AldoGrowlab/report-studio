@@ -289,9 +289,12 @@ fotonya belum ada.
 - Struktur PPT gaya agency (Fase A, Jul 2026): **cover report (1x) → per platform: [pembatas
   ("SHOPEE REPORT"/"TIKTOK SHOP REPORT", latar primer, styling saja) → slide section →
   Kesimpulan → Rekomendasi*] → Thank You (1x)**. (*Slide "Rekomendasi & Action Plan" per
-  platform: DIKETIK USER MANUAL (tabel `Recommendation`, unik per (report, platform), textarea
-  di halaman report) — teks bebas apa adanya, baris baru dipertahankan, TANPA AI/bold otomatis;
-  kosong = slide dilewati, bukan slide kosong.) Slide Thank You: teks + logo tema + kontak dari
+  platform: DIKETIK USER MANUAL (tabel `Recommendation.points` = `String[]`, unik per
+  (report, platform), input poin demi poin di halaman report) — POIN DEMI POIN, dirender jadi
+  bullet list (format seragam dengan slide Kesimpulan) TAPI TANPA AI/bold otomatis (murni
+  manual, `numbers` kosong); tanpa poin = slide dilewati, bukan slide kosong. Revisi Jul 2026:
+  dulu satu blok teks bebas `content`, kini `points[]` — input tiap poin punya baris sendiri
+  (tambah/hapus), output tiap poin satu bullet.) Slide Thank You: teks + logo tema + kontak dari
   `Theme` (`contactEmail`/`contactWebsite`/`contactInstagram`, editable founder di
   `/dashboard/theme`; kosong = bagian itu tak tampil). Nama platform pindah dari cover ke
   pembatas; cover menampilkan periode + daftar platform.
@@ -425,6 +428,13 @@ fotonya belum ada.
   setelah induknya, tak pernah ada sub yatim). Render: PPT `indentLevel:1` + bullet
   sekunder (en dash) + huruf sedikit kecil; web = komponen `BoldPoints` bersama
   (insight, kesimpulan, before/after revisi).
+- [x] Rekomendasi poin demi poin (Jul 2026) — `Recommendation.content` (teks bebas) →
+  `Recommendation.points` (`String[]`, migrasi `recommendation_points` mengubah `content`
+  jadi poin per baris). Input di halaman report: tiap poin punya baris sendiri (tambah/hapus),
+  bukan lagi textarea. Output PPT: bullet list via `addPointsText` (format seragam dgn
+  Kesimpulan) TAPI `numbers` kosong = TANPA bold otomatis (tetap murni manual). Paginasi
+  "(lanjutan)" & guard `pageTotal` tetap. Slide dilewati bila tanpa poin. Lihat baris
+  "Struktur PPT gaya agency" di §Stack.
 - [ ] Tahap 11 — Deploy ke Railway
 
 **Backlog (disengaja ditunda, keputusan audit Jul 2026):**

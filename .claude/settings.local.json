@@ -19,7 +19,20 @@
       "Bash(pkill -f \"next dev\")",
       "Bash(curl *)",
       "Bash(touch docs/.perm-test)",
-      "Bash(rm docs/.perm-test)"
+      "Bash(rm docs/.perm-test)",
+      "Bash(echo \"  tsc: $?\")",
+      "Bash(npm run *)",
+      "Bash(echo \"production build exit: $?\")",
+      "Bash(git add *)",
+      "Bash(git commit -q -m ' *)",
+      "Bash(git push *)",
+      "Bash(echo \" build exit: $?\")",
+      "Read(//tmp/**)",
+      "Bash(echo \"build exit: $?\")",
+      "Bash(grep -rn -A3 'fetch\\(`\\\\?/api/' app --include=\"*.tsx\")",
+      "Bash(grep -oE '/api/[^`\"]*.*method: \"[A-Z]+\"')",
+      "Bash(grep -B1 -A1 \"^\\\\S*-\\\\s*}$\")",
+      "Bash(git -C /Users/sandysetyono/Documents/report-studio status --short)"
     ]
   }
 }

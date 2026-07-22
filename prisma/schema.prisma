@@ -117,7 +117,10 @@ model Recommendation {
   id        String   @id @default(cuid())
   reportId  String
   platform  Platform
-  content   String
+  // Poin demi poin (Jul 2026) — dulu satu blok teks bebas "content"; kini tiap poin
+  // rekomendasi/action-plan satu entri, dirender jadi bullet list di slide (pola sama
+  // dengan Insight.points/Conclusion.points, TAPI tanpa bold otomatis — tetap manual).
+  points    String[]
   updatedAt DateTime @updatedAt
 
   report Report @relation(fields: [reportId], references: [id], onDelete: Cascade)

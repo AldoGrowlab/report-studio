@@ -86,10 +86,10 @@ export default async function ReportDetailPage({
     return { ...c, updatedAt: c.updatedAt.toISOString(), stale };
   });
 
-  // Rekomendasi & Action Plan tersimpan (Fase A) — ketikan user manual per platform.
+  // Rekomendasi & Action Plan tersimpan (Fase A) — poin demi poin, ketikan user manual.
   const recommendations = await prisma.recommendation.findMany({
     where: { reportId: id },
-    select: { platform: true, content: true },
+    select: { platform: true, points: true },
   });
 
   // Tahap 7b — jejak revisi Validator (before/after/alasan, per insight) + flag

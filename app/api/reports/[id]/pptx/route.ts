@@ -32,7 +32,7 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/reports/[id
       },
       insights: { select: { sectionId: true, points: true, numbers: true } },
       conclusions: { select: { platform: true, points: true, numbers: true } },
-      recommendations: { select: { platform: true, content: true } },
+      recommendations: { select: { platform: true, points: true } },
     },
   });
   if (!report) {
@@ -64,10 +64,9 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/reports/[id
       ? { points: conclusionRow.points, numbers: conclusionRow.numbers }
       : null;
 
-    // Rekomendasi manual user (Fase A) — kosong/absen = slide dilewati (null).
+    // Rekomendasi manual user (Fase A) — poin demi poin; tanpa poin = slide dilewati (null).
     const recoRow = report.recommendations.find((r) => r.platform === platform);
-    const recommendation =
-      recoRow && recoRow.content.trim().length > 0 ? recoRow.content : null;
+    const recommendation = recoRow && recoRow.points.length > 0 ? recoRow.points : null;
 
     // Blok dilewati HANYA kalau benar-benar kosong. Dulu cukup "tanpa foto" — akibatnya
     // kesimpulan & rekomendasi platform yang belum ada fotonya hilang dari deck tanpa

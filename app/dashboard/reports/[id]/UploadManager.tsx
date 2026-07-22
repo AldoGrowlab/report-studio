@@ -67,10 +67,10 @@ type PlatformConclusion = {
 };
 
 // "Rekomendasi & Action Plan" per platform (Fase A gaya agency) — DIKETIK USER MANUAL,
-// bukan AI. Teks bebas apa adanya; kosong = slide rekomendasi dilewati saat generate PPT.
+// bukan AI. Poin demi poin; tanpa poin = slide rekomendasi dilewati saat generate PPT.
 type PlatformRecommendation = {
   platform: "shopee" | "tiktok";
-  content: string;
+  points: string[];
 };
 
 // Jejak revisi Validator (Tahap 7b): before/after/alasan — tidak ada perubahan diam-diam.
@@ -597,18 +597,46 @@ export default function UploadManager({
   }
 
   // --- Rekomendasi & Action Plan per platform (Fase A) ---
-  // Murni ketikan user (tanpa AI); disimpan via PUT, kosong = dihapus (slide dilewati).
-  const [recoDraft, setRecoDraft] = useState<Record<string, string>>(() =>
-    Object.fromEntries(initialRecommendations.map((r) => [r.platform, r.content]))
+  // Murni ketikan user (tanpa AI), poin demi poin; disimpan via PUT, tanpa poin =
+  // dihapus (slide dilewati).
+  const [recoDraft, setRecoDraft] = useState<Record<string, string[]>>(() =>
+    Object.fromEntries(initialRecommendations.map((r) => [r.platform, r.points]))
   );
   // Nilai tersimpan terakhir, untuk mendeteksi ketikan yang belum disimpan. Rekomendasi
   // adalah satu-satunya konten yang diketik manual di halaman ini — kehilangannya paling
-  // mahal, dan tombol Simpan ada di ATAS textarea sehingga mudah terlewat.
-  const [recoSaved, setRecoSaved] = useState<Record<string, string>>(() =>
-    Object.fromEntries(initialRecommendations.map((r) => [r.platform, r.content]))
+  // mahal, dan tombol Simpan ada di ATAS daftar poin sehingga mudah terlewat.
+  const [recoSaved, setRecoSaved] = useState<Record<string, string[]>>(() =>
+    Object.fromEntries(initialRecommendations.map((r) => [r.platform, r.points]))
   );
-  const recoDirty = (platform: string) =>
-    (recoDraft[platform] ?? "") !== (recoSaved[platform] ?? "");
+  const [recoSaving, setRecoSaving] = useState<Record<string, boolean>>({});
+  const [recoMessage, setRecoMessage] = useState<Record<string, string>>({});
+  // Bandingkan versi TERNORMALISASI (poin ditrim, poin kosong dibuang — persis yang
+  // disimpan server), supaya baris kosong yang baru ditambah belum dianggap "belum
+  // tersimpan" sampai benar-benar diketik.
+  const normReco = (arr?: string[]) =>
+    (arr ?? []).map((s) => s.trim()).filter((s) => s !== "");
+  const recoDirty = (platform: string) => {
+    const a = normReco(recoDraft[platform]);
+    const b = normReco(recoSaved[platform]);
+    return a.length !== b.length || a.some((v, i) => v !== b[i]);
+  };
+  const setRecoPoint = (platform: string, index: number, value: string) => {
+    setRecoDraft((p) => {
+      const next = (p[platform] ?? []).slice();
+      next[index] = value;
+      return { ...p, [platform]: next };
+    });
+    setRecoMessage((p) => ({ ...p, [platform]: "" }));
+  };
+  const addRecoPoint = (platform: string) =>
+    setRecoDraft((p) => ({ ...p, [platform]: [...(p[platform] ?? []), ""] }));
+  const removeRecoPoint = (platform: string, index: number) => {
+    setRecoDraft((p) => ({
+      ...p,
+      [platform]: (p[platform] ?? []).filter((_, i) => i !== index),
+    }));
+    setRecoMessage((p) => ({ ...p, [platform]: "" }));
+  };
 
   // Cegah kehilangan ketikan rekomendasi saat tab ditutup/di-reload. (Navigasi internal
   // Next tidak memicu beforeunload — penanda "belum tersimpan" di atas yang menanganinya.)
@@ -619,8 +647,6 @@ export default function UploadManager({
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [hasUnsavedReco]);
-  const [recoSaving, setRecoSaving] = useState<Record<string, boolean>>({});
-  const [recoMessage, setRecoMessage] = useState<Record<string, string>>({});
 
   async function saveRecommendation(platform: "shopee" | "tiktok") {
     setRecoSaving((p) => ({ ...p, [platform]: true }));
@@ -629,7 +655,7 @@ export default function UploadManager({
       const res = await fetch(`/api/reports/${reportId}/recommendation`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform, content: recoDraft[platform] ?? "" }),
+        body: JSON.stringify({ platform, points: recoDraft[platform] ?? [] }),
       });
       if (res.status === 403) {
         router.push("/login");
@@ -640,8 +666,9 @@ export default function UploadManager({
         setRecoMessage((p) => ({ ...p, [platform]: data.error || `Gagal menyimpan (kode ${res.status}).` }));
         return;
       }
-      setRecoDraft((p) => ({ ...p, [platform]: data.recommendation?.content ?? "" }));
-      setRecoSaved((p) => ({ ...p, [platform]: data.recommendation?.content ?? "" }));
+      const savedPoints: string[] = data.recommendation?.points ?? [];
+      setRecoDraft((p) => ({ ...p, [platform]: savedPoints }));
+      setRecoSaved((p) => ({ ...p, [platform]: savedPoints }));
       setRecoMessage((p) => ({
         ...p,
         [platform]: data.recommendation
@@ -1505,14 +1532,15 @@ export default function UploadManager({
         </div>
       </div>
 
-      {/* Rekomendasi & Action Plan per platform (Fase A) — ketikan user manual, bukan AI.
-          Tampil PERSIS apa adanya di slide Rekomendasi (baris baru dipertahankan);
-          kosong = slide dilewati. */}
+      {/* Rekomendasi & Action Plan per platform (Fase A) — POIN DEMI POIN, ketikan user
+          manual (bukan AI). Tiap poin jadi satu bullet di slide Rekomendasi; tanpa poin =
+          slide dilewati. */}
       <div className="mt-8">
         <h3 className="text-sm font-medium text-fg-2">Rekomendasi &amp; Action Plan</h3>
         <div className="mt-3 space-y-3">
           {platforms.map((platform) => {
             const label = platform === "shopee" ? "Shopee" : "TikTok";
+            const points = recoDraft[platform] ?? [];
             return (
               <div
                 key={platform}
@@ -1533,19 +1561,46 @@ export default function UploadManager({
                     {recoSaving[platform] ? "Menyimpan…" : "Simpan"}
                   </button>
                 </div>
-                <textarea
-                  value={recoDraft[platform] ?? ""}
-                  onChange={(e) => {
-                    setRecoDraft((p) => ({ ...p, [platform]: e.target.value }));
-                    setRecoMessage((p) => ({ ...p, [platform]: "" }));
-                  }}
-                  rows={5}
-                  placeholder={`Ketik rekomendasi & action plan ${label} di sini — tampil apa adanya di slide (kosong = slide dilewati).`}
-                  className="textarea mt-2 w-full"
-                />
+
+                <div className="mt-2 space-y-2">
+                  {points.length === 0 && (
+                    <p className="text-xs text-fg-3">
+                      Belum ada poin. Tambah poin di bawah — tiap poin jadi satu bullet di
+                      slide (tanpa poin = slide dilewati).
+                    </p>
+                  )}
+                  {points.map((pt, i) => (
+                    <div key={i} className="flex items-start gap-2">
+                      <span className="mt-2.5 w-5 shrink-0 text-right text-xs tabular-nums text-fg-3">
+                        {i + 1}.
+                      </span>
+                      <input
+                        value={pt}
+                        onChange={(e) => setRecoPoint(platform, i, e.target.value)}
+                        placeholder={`Poin ${i + 1}`}
+                        className="input flex-1"
+                      />
+                      <button
+                        onClick={() => removeRecoPoint(platform, i)}
+                        className="btn-ghost shrink-0 px-2.5 py-2 text-fg-3 hover:text-danger"
+                        aria-label={`Hapus poin ${i + 1}`}
+                        title="Hapus poin"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => addRecoPoint(platform)}
+                    className="btn-ghost px-3 py-1.5 text-xs"
+                  >
+                    + Tambah poin
+                  </button>
+                </div>
+
                 {recoMessage[platform] && (
                   <p
-                    className={`mt-1 text-xs ${recoMessage[platform].startsWith("Tersimpan") || recoMessage[platform].startsWith("Kosong") ? "text-ok" : "text-danger"}`}
+                    className={`mt-2 text-xs ${recoMessage[platform].startsWith("Tersimpan") || recoMessage[platform].startsWith("Kosong") ? "text-ok" : "text-danger"}`}
                   >
                     {recoMessage[platform]}
                   </p>

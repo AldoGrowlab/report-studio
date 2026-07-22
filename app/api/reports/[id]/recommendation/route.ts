@@ -4,8 +4,9 @@ import { getSession } from "@/lib/session";
 import { canAccessReport } from "@/lib/reports";
 
 // PUT — simpan "Rekomendasi & Action Plan" per (report, platform). Fase A gaya agency.
-// DIKETIK USER MANUAL (founder & operator) — teks bebas apa adanya, TANPA AI, TANPA
-// pemrosesan. Kosong = baris dihapus (slide rekomendasi dilewati saat generate PPT).
+// DIKETIK USER MANUAL (founder & operator) — poin demi poin, TANPA AI, TANPA pemrosesan.
+// Tiap poin ditrim; poin kosong dibuang. Tanpa poin tersisa = baris dihapus (slide
+// rekomendasi dilewati saat generate PPT).
 export async function PUT(
   request: Request,
   ctx: RouteContext<"/api/reports/[id]/recommendation">
@@ -42,21 +43,24 @@ export async function PUT(
       { status: 400 }
     );
   }
-  if (typeof b?.content !== "string") {
-    return NextResponse.json({ error: "content harus berupa teks." }, { status: 400 });
+  if (!Array.isArray(b?.points)) {
+    return NextResponse.json({ error: "points harus berupa daftar poin." }, { status: 400 });
   }
-  // Trim ujung saja — baris baru & spasi DI DALAM teks dipertahankan apa adanya.
-  const content = b.content.replace(/^\s+|\s+$/g, "");
+  // Tiap poin ditrim; poin kosong dibuang. Urutan sisanya dipertahankan.
+  const points = b.points
+    .filter((p): p is string => typeof p === "string")
+    .map((p) => p.replace(/^\s+|\s+$/g, ""))
+    .filter((p) => p !== "");
 
-  if (content === "") {
+  if (points.length === 0) {
     await prisma.recommendation.deleteMany({ where: { reportId, platform } });
     return NextResponse.json({ recommendation: null });
   }
 
   const recommendation = await prisma.recommendation.upsert({
     where: { reportId_platform: { reportId, platform } },
-    update: { content },
-    create: { reportId, platform, content },
+    update: { points },
+    create: { reportId, platform, points },
   });
   return NextResponse.json({ recommendation });
 }

@@ -98,9 +98,9 @@ export type PptBlock = {
   sections: PptSection[];
   // Kesimpulan Validator platform ini (Tahap 7a) — null = slot tetap placeholder.
   conclusion: PptInsight | null;
-  // "Rekomendasi & Action Plan" ketikan user (Fase A) — apa adanya, baris baru
-  // dipertahankan, TANPA bold otomatis. null/kosong = slide TIDAK dibuat.
-  recommendation: string | null;
+  // "Rekomendasi & Action Plan" ketikan user (Fase A) — poin demi poin, dirender jadi
+  // bullet list. TANPA bold otomatis (murni manual). null/kosong = slide TIDAK dibuat.
+  recommendation: string[] | null;
 };
 
 export type PptReportData = {
@@ -478,23 +478,26 @@ export async function buildReportPptx(
 
   // Pecah section berfoto banyak SEBELUM menghitung total halaman, supaya nomor "n / total"
   // ikut menghitung slide lanjutan (pageTotal memakai sections.length yang sama).
-  // Rekomendasi = ketikan bebas user, panjangnya tak terbatas. Ukuran font dipilih dulu
-  // (13→12→11→10), lalu kalau di 10pt pun tidak muat, dipecah ke slide "(lanjutan)".
+  // Rekomendasi = poin demi poin ketikan user, jumlahnya tak terbatas. Ukuran font dipilih
+  // dulu (13→12→11→10), lalu kalau di 10pt pun tidak muat, poin dipecah ke slide
+  // "(lanjutan)". Lebar efektif dikurangi indent bullet (~0,25") + paraSpaceAfter 8pt agar
+  // paginasi konsisten dengan addPointsText yang merender bullet-nya.
   const RECO_SIZES = [SIZES.body, 12, 11, 10];
   const recoInner = {
-    w: PAGE.w - 2 * MARGIN - 2 * PANEL_PAD,
+    w: PAGE.w - 2 * MARGIN - 2 * PANEL_PAD - 0.25,
     h: CONTENT_H - 2 * (PANEL_PAD * 0.7),
   };
 
   const blocks = data.blocks.map((b) => {
-    const raw = b.recommendation?.trim() ? b.recommendation.replace(/\r\n/g, "\n").split("\n") : [];
-    const recoFont = raw.length > 0 ? fitFontSize(raw, recoInner, RECO_SIZES, 4) : SIZES.body;
-    const recoPages = raw.length > 0 ? paginateLines(raw, recoInner, recoFont, 4) : [];
+    const pts = b.recommendation ?? [];
+    // Font hanya dipakai untuk PAGINASI (addPointsText menghitung fit-nya sendiri saat
+    // render). Poin dipecah ke slide "(lanjutan)" bila di 10pt pun tak muat satu slide.
+    const recoFont = pts.length > 0 ? fitFontSize(pts, recoInner, RECO_SIZES, 8) : SIZES.body;
+    const recoPages = pts.length > 0 ? paginateLines(pts, recoInner, recoFont, 8) : [];
     return {
       ...b,
       sections: b.sections.flatMap(splitSectionPhotos),
       recoPages,
-      recoFont,
     };
   });
 
@@ -749,15 +752,15 @@ export async function buildReportPptx(
       });
     }
 
-    // --- Slide REKOMENDASI & ACTION PLAN (Fase A): ketikan user APA ADANYA — per baris
-    // jadi paragraf (baris kosong dipertahankan), TANPA bullet paksa, TANPA bold otomatis.
-    // Kosong = slide tidak dibuat (sudah disaring pemanggil; guard defensif di sini).
+    // --- Slide REKOMENDASI & ACTION PLAN (Fase A): poin demi poin jadi BULLET LIST,
+    // format seragam dgn Kesimpulan (addPointsText) TAPI numbers kosong = TANPA bold
+    // otomatis (rekomendasi tetap murni ketikan manual). Kosong = slide tidak dibuat
+    // (sudah disaring pemanggil; guard defensif di sini).
     for (let ri = 0; ri < block.recoPages.length; ri++) {
-      const lines = block.recoPages[ri];
+      const pagePoints = block.recoPages[ri];
       pageNo++;
       const reco = pptx.addSlide();
-      // Fase B: senada dengan Kesimpulan — latar primer + kartu putih; teks user tetap
-      // APA ADANYA (per baris jadi paragraf, tanpa bullet paksa, tanpa bold otomatis).
+      // Fase B: senada dengan Kesimpulan — latar primer + kartu putih berisi poin.
       reco.background = { color: theme.primary };
       addSlideHeader(
         reco,
@@ -769,24 +772,7 @@ export async function buildReportPptx(
       addFooter(reco, footerLabel, pageNo, pageTotal, theme, true);
       const recoBox = { x: MARGIN, y: CONTENT_Y, w: PAGE.w - 2 * MARGIN, h: CONTENT_H };
       addPointsPanel(reco, recoBox, accent, "FFFFFF");
-      const runs = lines.map((line, i) => ({
-        // Baris kosong tetap jadi paragraf (spasi) supaya jarak antar blok terjaga.
-        text: line === "" ? " " : line,
-        options: { ...(i < lines.length - 1 ? { breakLine: true } : {}) },
-      }));
-      reco.addText(runs, {
-        x: recoBox.x + PANEL_PAD,
-        y: recoBox.y + PANEL_PAD * 0.7,
-        w: recoBox.w - 2 * PANEL_PAD,
-        h: recoBox.h - 2 * (PANEL_PAD * 0.7),
-        fontFace: theme.bodyFont,
-        // Ukuran dihitung di kode (lihat fitFontSize) — `fit: "shrink"` tidak berfungsi.
-        fontSize: block.recoFont,
-        color: TEXT_BODY,
-        valign: "top",
-        align: "left",
-        paraSpaceAfter: 4,
-      });
+      addPointsText(reco, { points: pagePoints, numbers: [] }, recoBox, theme, accent);
     }
   }
 
