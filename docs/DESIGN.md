@@ -301,8 +301,15 @@ fotonya belum ada.
   (tambah/hapus), output tiap poin satu bullet.) Slide Thank You: teks + logo tema + kontak dari
   `Theme` (`contactEmail`/`contactWebsite`/`contactInstagram`, editable founder di
   `/dashboard/theme`; kosong = bagian itu tak tampil). Nama platform pindah dari cover ke
-  pembatas; cover menampilkan periode + daftar platform — daftar platform di cover dirender
-  BESAR & TEBAL (font judul 22pt, Jul 2026; sebelumnya font body 12pt biasa).
+  pembatas; cover menampilkan periode + daftar platform. **Skala cover & penutup (Jul 2026):**
+  daftar platform di cover BESAR & TEBAL (font judul 26pt; sebelumnya font body 12pt biasa)
+  dengan warna `primary` bila gelap — cover selalu berlatar putih, jadi primer TERANG jatuh
+  ke `secondary` agar tidak terang-di-putih; brand + periode di band jadi 26pt TEBAL dengan
+  kontras penuh (`onPrimaryText`, dulu 18pt biasa `onPrimarySubtle`); logo diperbesar di
+  cover (kotak 2,8"x1,2" -> 4,2"x1,95") dan di Thank You (2,2"x1,1" -> 3,5"x1,75").
+  Semua kotak dihitung agar tak bertindihan: logo cover tutup di 2,5" (band mulai 2,8"),
+  brand+periode 4,05"–4,75" (band tutup 4,8"), logo penutup tutup di 2,8" ("Thank You"
+  mulai 3,0").
   **Logo di slide Thank You saat tema gelap (Jul 2026):** logo tema dirancang untuk cover
   yang SELALU putih, jadi tintanya gelap dan lenyap di slide penutup berlatar primer gelap.
   Route pptx menyiapkan varian PUTIH (siluet: kanvas putih dimasking alpha logo, via `sharp`)

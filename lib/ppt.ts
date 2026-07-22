@@ -48,8 +48,9 @@ export const DEFAULT_PPT_THEME: PptTheme = {
 const TEXT_BODY = "1F2937"; // teks body tetap gelap netral — keterbacaan di atas putih
 const BG = "FFFFFF";
 const SIZES = {
-  coverPlatform: 22, // nama platform di cover — sengaja besar & tebal (hierarki kuat)
+  coverPlatform: 26, // nama platform di cover — sengaja besar & tebal (hierarki kuat)
   coverTitle: 40,
+  coverBrand: 26, // brand + periode di band cover — besar & tebal supaya terbaca jelas
   coverSub: 18,
   title: 20,
   titleXL: 24, // judul section uppercase (Fase B — hierarki kuat gaya agency)
@@ -519,9 +520,12 @@ export async function buildReportPptx(
   cover.background = { color: BG };
   if (theme.logo) {
     // Logo contain di tengah-atas — proporsi dari header bytes, tak pernah gepeng.
+    // Kotak DIPERBESAR (Jul 2026): tinggi 1,2"->1,95" dan lebar 2,8"->4,2". Tinggi yang
+    // menentukan untuk logo persegi (contain memakai sisi paling sempit), jadi keduanya
+    // dinaikkan. Berakhir di y=2,5" — masih menyisakan 0,3" sebelum band primer (2,8").
     const rect = containRect(
       theme.logo,
-      { x: PAGE.w / 2 - 1.4, y: 0.8, w: 2.8, h: 1.2 },
+      { x: PAGE.w / 2 - 2.1, y: 0.55, w: 4.2, h: 1.95 },
       "middle"
     );
     cover.addImage({ data: theme.logo.data, x: rect.x, y: rect.y, w: rect.w, h: rect.h });
@@ -556,24 +560,30 @@ export async function buildReportPptx(
     charSpacing: 3,
     color: onPrimaryText(theme),
   });
-  // Brand (kalau ada) + periode di satu baris subjudul cover.
-  cover.addText(
-    data.brandName ? `${data.brandName} · ${data.reportPeriod}` : data.reportPeriod,
-    {
+  // Brand (kalau ada) + periode di satu baris subjudul cover. DIPERBESAR & DIPERJELAS
+  // (Jul 2026): 18pt biasa + warna subtle -> 26pt TEBAL + warna kontras penuh
+  // (onPrimaryText, bukan onPrimarySubtle) supaya terbaca tegas di dalam band.
+  // Kotak 0,55"->0,7". y TETAP 1,25 (persis di bawah kotak judul yang tutup di 4,05")
+  // supaya tak bertindihan; berakhir 4,75" — masih di dalam band yang tutup di 4,8".
+  const coverSubtitle = data.brandName
+    ? `${data.brandName} · ${data.reportPeriod}`
+    : data.reportPeriod;
+  cover.addText(coverSubtitle, {
       x: MARGIN,
       y: COVER_BAND_Y + 1.25,
       w: PAGE.w - 2 * MARGIN,
-      h: 0.55,
+      h: 0.7,
       align: "center",
       fontFace: theme.bodyFont,
+      bold: true,
       // Dihitung di kode (`fit: "shrink"` no-op): nama brand panjang mengecil sampai
       // muat satu baris subjudul, tidak meluber melewati lebar cover.
       fontSize: fitFontSize(
-        [data.brandName ? `${data.brandName} · ${data.reportPeriod}` : data.reportPeriod],
-        { w: PAGE.w - 2 * MARGIN, h: 0.55 },
-        [SIZES.coverSub, 16, 14, 12, 11]
+        [coverSubtitle],
+        { w: PAGE.w - 2 * MARGIN, h: 0.7 },
+        [SIZES.coverBrand, 24, 22, 20, 18, 16]
       ),
-      color: onPrimarySubtle(theme),
+      color: onPrimaryText(theme),
     }
   );
   cover.addText(
@@ -582,14 +592,16 @@ export async function buildReportPptx(
       x: MARGIN,
       y: COVER_BAND_Y + COVER_BAND_H + 0.4,
       w: PAGE.w - 2 * MARGIN,
-      h: 0.6,
+      h: 0.7,
       align: "center",
       // Diperbesar & dipertegas: font judul + tebal (dulu font body 12pt biasa).
       fontFace: theme.headingFont,
       fontSize: SIZES.coverPlatform,
       bold: true,
       charSpacing: 3,
-      color: theme.secondary,
+      // Cover SELALU berlatar putih. Primer yang gelap dipakai langsung (paling tegas);
+      // tema berprimer TERANG jatuh ke sekunder supaya tidak jadi terang-di-putih.
+      color: isDarkColor(theme.primary) ? theme.primary : theme.secondary,
     }
   );
 
@@ -788,7 +800,9 @@ export async function buildReportPptx(
   const thanks = pptx.addSlide();
   thanks.background = { color: theme.primary };
   if (theme.logo) {
-    const rect = containRect(theme.logo, { x: PAGE.w / 2 - 1.1, y: 1.35, w: 2.2, h: 1.1 });
+    // Kotak logo DIPERBESAR (Jul 2026): 2,2"x1,1" -> 3,5"x1,75", digeser naik ke y=1,05"
+    // supaya ujung bawahnya (2,8") tetap menyisakan jarak sebelum "Thank You" di y=3,0".
+    const rect = containRect(theme.logo, { x: PAGE.w / 2 - 1.75, y: 1.05, w: 3.5, h: 1.75 });
     // Latar primer GELAP -> pakai varian PUTIH kalau route berhasil menyiapkannya, supaya
     // logo bertinta gelap tidak "hilang" di slide penutup. Geometri dari logo asli
     // (dimensinya sama persis). Latar terang tetap memakai logo asli.
