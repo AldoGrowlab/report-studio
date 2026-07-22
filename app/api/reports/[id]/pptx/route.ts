@@ -84,8 +84,16 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/reports/[id
     for (const g of groups) {
       const photos: PptPhoto[] = [];
       let missingPhotos = 0;
-      for (let i = 0; i < g.items.length; i++) {
-        const u = g.items[i];
+      // Section perbandingan periode: foto PERIODE UTAMA selalu di ATAS, foto pembanding
+      // (bukan utama) di bawah — konsisten di semua slide. Sort STABIL: isPrimaryPeriod
+      // dulu, sisanya tetap urut input (createdAt). Section non-perbandingan TIDAK diubah
+      // (semua isPrimaryPeriod=false + tanpa periodMonth → urutan input apa adanya).
+      const isComparison = g.items.some((u) => u.periodMonth !== null);
+      const items = isComparison
+        ? [...g.items].sort((a, b) => Number(b.isPrimaryPeriod) - Number(a.isPrimaryPeriod))
+        : g.items;
+      for (let i = 0; i < items.length; i++) {
+        const u = items[i];
         // Foto disematkan (embedded) supaya file mandiri — Prinsip #5: foto asli wajib tampil.
         // storage.read() melempar untuk gangguan NYATA (kredensial/jaringan/bucket) dan
         // hanya mengembalikan null kalau objeknya memang tidak ada. Gangguan tidak boleh

@@ -179,6 +179,10 @@ bukan disetel manual. — SUDAH DIIMPLEMENTASI.
 >   blok itu, kutip verbatim, fokus periode utama; metrik tanpa baris perubahan tidak boleh
 >   diklaim berubah. Persen/pp ikut kosakata `Insight.numbers` → ter-bold oleh splitter yang
 >   sama; TIDAK disimpan sebagai baris Extraction (turunan, dihitung saat generate).
+> - **Urutan foto di slide (Jul 2026):** di section perbandingan periode, foto PERIODE UTAMA
+>   (`Upload.isPrimaryPeriod`) selalu ditaruh di ATAS, foto pembanding di bawah — konsisten
+>   di semua slide. Diurut di route pptx dengan sort STABIL (utama dulu, sisanya tetap urut
+>   input); section NON-perbandingan tidak diubah (urutan input/`createdAt` apa adanya).
 
 ## Validator & Kesimpulan (keputusan Jul 2026)
 
