@@ -18,10 +18,14 @@ import {
 } from "@/lib/theme";
 
 // Logo tema (opsional) — bytes untuk hitung proporsi, data URL untuk pptxgenjs.
+// dataOnDark = varian PUTIH (siluet) dari logo yang sama, disiapkan route saat latar
+// primer GELAP: logo bertinta gelap (dirancang untuk cover putih) jadi tak terlihat di
+// slide Thank You berlatar primer. Kosong = pakai logo asli apa adanya.
 export type PptLogo = {
   data: string;
   bytes: Uint8Array;
   contentType: string;
+  dataOnDark?: string;
 };
 
 // Kontak slide Thank You (Fase A gaya agency) — string kosong = bagian itu tak ditampilkan.
@@ -44,7 +48,7 @@ export const DEFAULT_PPT_THEME: PptTheme = {
 const TEXT_BODY = "1F2937"; // teks body tetap gelap netral — keterbacaan di atas putih
 const BG = "FFFFFF";
 const SIZES = {
-  coverKicker: 12,
+  coverPlatform: 22, // nama platform di cover — sengaja besar & tebal (hierarki kuat)
   coverTitle: 40,
   coverSub: 18,
   title: 20,
@@ -578,11 +582,13 @@ export async function buildReportPptx(
       x: MARGIN,
       y: COVER_BAND_Y + COVER_BAND_H + 0.4,
       w: PAGE.w - 2 * MARGIN,
-      h: 0.4,
+      h: 0.6,
       align: "center",
-      fontFace: theme.bodyFont,
-      fontSize: SIZES.coverKicker,
-      charSpacing: 5,
+      // Diperbesar & dipertegas: font judul + tebal (dulu font body 12pt biasa).
+      fontFace: theme.headingFont,
+      fontSize: SIZES.coverPlatform,
+      bold: true,
+      charSpacing: 3,
       color: theme.secondary,
     }
   );
@@ -783,7 +789,14 @@ export async function buildReportPptx(
   thanks.background = { color: theme.primary };
   if (theme.logo) {
     const rect = containRect(theme.logo, { x: PAGE.w / 2 - 1.1, y: 1.35, w: 2.2, h: 1.1 });
-    thanks.addImage({ data: theme.logo.data, x: rect.x, y: rect.y, w: rect.w, h: rect.h });
+    // Latar primer GELAP -> pakai varian PUTIH kalau route berhasil menyiapkannya, supaya
+    // logo bertinta gelap tidak "hilang" di slide penutup. Geometri dari logo asli
+    // (dimensinya sama persis). Latar terang tetap memakai logo asli.
+    const logoData =
+      isDarkColor(theme.primary) && theme.logo.dataOnDark
+        ? theme.logo.dataOnDark
+        : theme.logo.data;
+    thanks.addImage({ data: logoData, x: rect.x, y: rect.y, w: rect.w, h: rect.h });
   }
   thanks.addText("Thank You", {
     x: MARGIN,

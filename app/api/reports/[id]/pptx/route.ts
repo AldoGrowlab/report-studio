@@ -5,6 +5,8 @@ import { canAccessReport } from "@/lib/reports";
 import { getStorage } from "@/lib/storage";
 import { groupBySection } from "@/lib/uploads-view";
 import { formatMonthID } from "@/lib/period";
+import { isDarkColor } from "@/lib/theme";
+import sharp from "sharp";
 import {
   buildReportPptx,
   DEFAULT_PPT_THEME,
@@ -168,6 +170,38 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/reports/[id
         instagram: themeRow.contactInstagram,
       },
     };
+  }
+
+  // Slide Thank You berlatar primer. Logo tema dirancang untuk cover yang SELALU putih,
+  // jadi tintanya gelap — di latar primer gelap logo itu praktis hilang. Siapkan varian
+  // PUTIH (siluet: kanvas putih dimasking alpha logo) khusus slide itu.
+  // Hanya untuk logo BER-ALPHA: logo tanpa transparansi (mis. JPEG) sudah punya latar
+  // sendiri sehingga tetap terlihat — dimasking malah jadi kotak putih polos.
+  // Gagal apa pun -> diam-diam pakai logo asli (Prinsip #3: report selalu selesai).
+  if (theme.logo && isDarkColor(theme.primary)) {
+    try {
+      const src = Buffer.from(theme.logo.bytes);
+      const meta = await sharp(src).metadata();
+      if (meta.hasAlpha && meta.width && meta.height) {
+        const whitePng = await sharp({
+          create: {
+            width: meta.width,
+            height: meta.height,
+            channels: 4,
+            background: { r: 255, g: 255, b: 255, alpha: 1 },
+          },
+        })
+          .composite([{ input: src, blend: "dest-in" }]) // putih dipotong alpha logo
+          .png()
+          .toBuffer();
+        theme = {
+          ...theme,
+          logo: { ...theme.logo, dataOnDark: `image/png;base64,${whitePng.toString("base64")}` },
+        };
+      }
+    } catch {
+      // biarkan — slide penutup memakai logo asli
+    }
   }
 
   const buffer = await buildReportPptx(

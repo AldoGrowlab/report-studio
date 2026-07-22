@@ -301,7 +301,14 @@ fotonya belum ada.
   (tambah/hapus), output tiap poin satu bullet.) Slide Thank You: teks + logo tema + kontak dari
   `Theme` (`contactEmail`/`contactWebsite`/`contactInstagram`, editable founder di
   `/dashboard/theme`; kosong = bagian itu tak tampil). Nama platform pindah dari cover ke
-  pembatas; cover menampilkan periode + daftar platform.
+  pembatas; cover menampilkan periode + daftar platform — daftar platform di cover dirender
+  BESAR & TEBAL (font judul 22pt, Jul 2026; sebelumnya font body 12pt biasa).
+  **Logo di slide Thank You saat tema gelap (Jul 2026):** logo tema dirancang untuk cover
+  yang SELALU putih, jadi tintanya gelap dan lenyap di slide penutup berlatar primer gelap.
+  Route pptx menyiapkan varian PUTIH (siluet: kanvas putih dimasking alpha logo, via `sharp`)
+  dan `lib/ppt.ts` memakainya HANYA di slide itu saat `isDarkColor(primary)`. Hanya untuk
+  logo ber-alpha (logo tanpa transparansi punya latar sendiri — dimasking malah jadi kotak
+  putih); gagal apa pun = pakai logo asli (Prinsip #3). Cover tetap memakai logo asli.
 - Tema (Tahap 10, "Cara B"): SATU tema aktif GLOBAL di tabel `Theme` (record tunggal), diubah
   founder via `/dashboard/theme`, dipakai SEMUA report saat generate — termasuk report lama
   (disengaja: PPT dirakit on-the-fly dengan tema aktif; tema TIDAK disimpan per-report).
