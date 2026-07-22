@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 type Platform = "shopee" | "tiktok";
-type MetricType = "number" | "currency" | "percent" | "ratio";
+type MetricType = "number" | "currency" | "percent" | "ratio" | "duration";
 
 type MetricRow = {
   key: string;
@@ -29,6 +29,7 @@ const METRIC_TYPES: { value: MetricType; label: string }[] = [
   { value: "currency", label: "Rupiah" },
   { value: "percent", label: "Persen" },
   { value: "ratio", label: "Rasio" },
+  { value: "duration", label: "Durasi" },
 ];
 
 function emptyMetric(): MetricRow {

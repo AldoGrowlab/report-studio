@@ -1,5 +1,6 @@
 import type { ExtractionStatus, MetricType, Platform } from "@prisma/client";
 import { formatMonthID, type PeriodChange } from "@/lib/period";
+import { formatDurationID } from "@/lib/duration";
 import {
   flattenPoints,
   SUB_POINT_PREFIX,
@@ -24,6 +25,10 @@ const MODEL = "claude-opus-4-8";
 export function abbreviateNumberID(value: number, type: MetricType): string {
   // Nilai non-finite tidak boleh pernah tercetak sebagai "NaN miliar" di slide klien.
   if (!Number.isFinite(value)) return "tidak tersedia";
+
+  // Durasi bukan besaran ribuan: 5.025 detik BUKAN "5,0k" tapi "1j 23mnt 45dtk".
+  // Penyimpanan tetap detik penuh (Prinsip #6) — ini murni pembahasaan.
+  if (type === "duration") return formatDurationID(value);
 
   const plain = value.toLocaleString("id-ID", { maximumFractionDigits: 20 });
   if (type === "percent") return `${plain}%`;

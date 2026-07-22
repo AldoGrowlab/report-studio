@@ -32,6 +32,10 @@
    - Satuan dipilih SETELAH pembulatan (Jul 2026): 999.999 membulat ke "1000,0k", yang
      sebenarnya "1,0 jt" — naik satu tingkat bila pembulatan menyentuh 1000.
    - Nilai non-finite (NaN/Infinity) → "tidak tersedia", tak pernah tercetak di slide.
+   - **Metrik DURASI (Jul 2026) tidak ikut aturan k/jt/miliar.** Disimpan dalam satuan
+     KANONIK **detik** di `Extraction.value`, dibahasakan sebagai "1j 23mnt 45dtk"
+     (komponen bernilai 0 dibuang; minimal "0dtk"). 5.025 detik → "1j 23mnt 45dtk",
+     BUKAN "5,0k". Lihat §Tipe Metrik Durasi.
 
 ## Normalisasi Notasi Singkatan (aturan ekstraksi permanen, per-platform)
 
@@ -75,6 +79,28 @@ Huruf tidak peduli besar/kecil; abaikan embel `I`/`IDR`/`Rp` dan spasi.
 Contoh (teruji): Shopee `179.395,44K`→179395440, `2.069,95M`→2069950000, `23.2m`→23200000,
 `548.5k`→548500, `1.2b`→1200000000; TikTok `191,1 jt`→191100000, `1,2 M`→1200000000,
 `47.551.292 IDR`→47551292.
+
+## Tipe Metrik Durasi (Jul 2026)
+
+Tipe metrik kelima di samping `number`/`currency`/`percent`/`ratio`: **`duration`**
+(label UI "Durasi"), untuk metrik seperti durasi live.
+
+- **Satuan kanonik = DETIK** di `Extraction.value` (Prinsip #6: simpan penuh, singkat hanya
+  saat dibahasakan). `raw_text` tetap teks asli apa adanya (mis. `01:23:45`).
+- **Bentuk yang dibaca dari screenshot** (keputusan user): `hh:mm:ss`, `... s`, `... min`,
+  `...h...min`. Ditambah varian Indonesia yang lazim: `jam/j`, `menit/mnt`, `detik/dtk`,
+  dan gabungan (`1h 30m 15s`, `2 jam 15 menit`). Desimal koma diterima (`1,5 jam`).
+  Dua bagian bertitik dua dibaca **mm:ss** (`12:30` = 750 detik), tiga bagian **hh:mm:ss**.
+  Angka telanjang tanpa satuan → diperlakukan detik.
+- **Parsing DETERMINISTIK di kode** (`lib/duration.ts`, bukan aritmetika LLM — Prinsip #1),
+  dan **punya jalur sendiri di Extractor**: normalizer notasi singkatan membuang `:` sehingga
+  `01:23:45` terbaca **12345** (bukan 5025) — itu sebabnya `type === "duration"` dicabang
+  sebelum normalizer. Suffix besaran (k/jt/M) tidak berlaku → `unknownMagnitude` selalu false.
+- **Perbandingan periode**: durasi adalah besaran, jadi memakai rumus RELATIF (`+50,0%`)
+  seperti number/currency/ratio — bukan poin persentase (itu khusus `percent`).
+- **UI koreksi manual**: nilai ditampilkan & diketik manusiawi ("1j 23mnt", "01:23:45",
+  "45 s") lalu dikonversi ke detik di client; API `/api/extractions/[id]` tetap hanya
+  menerima angka (satuan kanonik) — kontrak server tidak berubah.
 
 ## Arsitektur Pipeline (4 lapisan tipis + orchestrator)
 
@@ -251,6 +277,7 @@ fotonya belum ada.
 | Visualisasi data | TIDAK pernah bikin chart dari angka. Foto asli yang tampil; angka hanya untuk analisa & caption. |
 | Penyingkatan angka | Hanya saat dibahasakan (caption/narasi), tak pernah saat disimpan. Aturan k/jt/miliar 1 desimal — lihat Prinsip #6. |
 | Notasi singkatan di screenshot | Extractor menormalkan `raw_text` → nilai PENUH secara deterministik, per-platform (`M`=juta di Shopee, `M`=miliar di TikTok). Lihat §Normalisasi Notasi Singkatan. |
+| Metrik durasi (`hh:mm:ss`, `45 s`, `12 min`, `1h 30min`) | Jalur parsing SENDIRI di Extractor (normalizer singkatan membuang `:` → `01:23:45` jadi 12345). Disimpan detik, dibahasakan "1j 23mnt 45dtk", dibandingkan relatif (%). Lihat §Tipe Metrik Durasi. |
 | Section dengan perbandingan periode | Penanda bulan per-FOTO (bukan per-report); SATU foto per bulan (duplikat ditolak server); foto pembanding di-upload ulang tiap bulan, tanpa memori antar-report; Extractor tak menggabung; persen/pp dihitung KODE berantai antar bulan berdekatan (lewati bila data tak lengkap/pembagi 0), Analyst hanya menarasikan. Lihat §Perbandingan Periode. |
 | Slide kesimpulan/summary | Ditulis VALIDATOR (bukan agent baru), per-platform di akhir bloknya masing-masing; TIDAK ada kesimpulan gabungan lintas-platform. Lihat §Validator & Kesimpulan. |
 

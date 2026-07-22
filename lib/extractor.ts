@@ -1,5 +1,6 @@
 import type { MetricType, ExtractionStatus, Platform } from "@prisma/client";
 import type { ImageBytes } from "@/lib/storage";
+import { parseDurationToSeconds } from "@/lib/duration";
 import { llmBackend, anthropicClient, LLM_MAX_TOKENS } from "@/lib/llm";
 
 // Metrik yang diharapkan section (memandu extractor).
@@ -159,6 +160,22 @@ function buildResults(
     const rawText = item && typeof item.raw_text === "string" ? item.raw_text : null;
     const llmValue =
       item && typeof item.value === "number" && Number.isFinite(item.value) ? item.value : null;
+    // Metrik DURASI punya jalur sendiri: normalizer notasi singkatan membuang ":" dan
+    // akan membaca "01:23:45" sebagai 12345. Parser durasi mengubahnya ke DETIK
+    // (satuan kanonik). Suffix besaran (k/jt/M) tak berlaku di sini -> unknownMagnitude
+    // selalu false. Fallback value LLM juga diperlakukan sebagai detik.
+    if (m.type === "duration") {
+      const seconds = parseDurationToSeconds(rawText);
+      const durationValue = seconds !== null ? seconds : llmValue;
+      const durationConfidence = durationValue === null ? 0 : clampConfidence(item?.confidence);
+      return {
+        key: m.key,
+        value: durationValue,
+        rawText,
+        confidence: durationConfidence,
+        status: statusFor(durationValue, durationConfidence),
+      };
+    }
     // Prioritaskan normalisasi deterministik dari raw_text; fallback ke value LLM.
     const normalized = normalizeAbbreviatedNumberDetailed(rawText, platform);
     const value = normalized.value !== null ? normalized.value : llmValue;
@@ -200,6 +217,9 @@ async function extractWithClaude(
     `pemisah apa adanya, mis. "179.395,44K", "191,1 jt", "Rp1.234.567", "12,5%"), ` +
     `value (pembacaan angka terbaikmu; sistem akan menormalkan sendiri dari raw_text, jadi utamakan raw_text yang akurat; null kalau tak terlihat), ` +
     `dan confidence 0..1 (seberapa yakin angkanya benar). ` +
+    `Untuk metrik bertipe "duration": salin raw_text PERSIS bentuk durasinya apa adanya ` +
+    `(mis. "01:23:45", "45 s", "12 min", "1h 30min") — JANGAN diubah jadi angka/detik; ` +
+    `sistem yang mengonversinya. Isi value dengan durasi dalam DETIK bila kamu yakin, selain itu null. ` +
     `JANGAN menebak: kalau metrik tidak ada di gambar, value=null, raw_text=null, confidence=0. ` +
     `Jangan menghitung ulang atau membuat angka baru.\n\nMetrik:\n${metricList}`;
 

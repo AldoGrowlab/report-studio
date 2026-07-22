@@ -22,7 +22,11 @@ export default async function ReportDetailPage({
       uploads: {
         orderBy: { createdAt: "asc" },
         include: {
-          section: { select: { id: true, name: true } },
+          // metrics ikut dibaca supaya tabel koreksi tahu TIPE tiap angka — durasi
+          // ditampilkan & diedit sebagai "1j 23mnt", bukan detik mentah.
+          section: {
+            select: { id: true, name: true, metrics: { select: { key: true, type: true } } },
+          },
           extractions: { orderBy: { key: "asc" } },
         },
       },
@@ -140,24 +144,30 @@ export default async function ReportDetailPage({
     },
   });
 
-  const initialUploads = report.uploads.map((u) => ({
-    id: u.id,
-    sectionId: u.sectionId,
-    sectionName: u.section.name,
-    platform: u.platform,
-    imageSrc: `/api/uploads/${u.id}/image`,
-    periodMonth: u.periodMonth,
-    isPrimaryPeriod: u.isPrimaryPeriod,
-    extractions: u.extractions.map((e) => ({
-      id: e.id,
-      key: e.key,
-      value: e.value,
-      rawText: e.rawText,
-      confidence: e.confidence,
-      status: e.status,
-      manuallyConfirmed: e.manuallyConfirmed,
-    })),
-  }));
+  const initialUploads = report.uploads.map((u) => {
+    // Tipe metrik dicocokkan per key. Metrik yang sudah dihapus dari section tapi
+    // angkanya masih tersimpan jatuh ke "number" — apa adanya, seperti sebelumnya.
+    const typeByKey = new Map(u.section.metrics.map((m) => [m.key, m.type]));
+    return {
+      id: u.id,
+      sectionId: u.sectionId,
+      sectionName: u.section.name,
+      platform: u.platform,
+      imageSrc: `/api/uploads/${u.id}/image`,
+      periodMonth: u.periodMonth,
+      isPrimaryPeriod: u.isPrimaryPeriod,
+      extractions: u.extractions.map((e) => ({
+        id: e.id,
+        key: e.key,
+        value: e.value,
+        rawText: e.rawText,
+        confidence: e.confidence,
+        status: e.status,
+        manuallyConfirmed: e.manuallyConfirmed,
+        type: typeByKey.get(e.key) ?? "number",
+      })),
+    };
+  });
 
   return (
     <div className="min-h-screen bg-ink text-fg">

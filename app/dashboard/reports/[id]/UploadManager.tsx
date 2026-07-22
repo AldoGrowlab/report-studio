@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { missingPhotoSections, groupBySection, formatValueID } from "@/lib/uploads-view";
+import { formatDurationID, parseDurationToSeconds } from "@/lib/duration";
 import { parsePointLine, splitByNumbers } from "@/lib/insight-format";
 import { monthOptions, formatMonthID } from "@/lib/period";
 import { MAX_UPLOAD_BYTES } from "@/lib/reports";
@@ -18,6 +19,8 @@ type SectionOption = {
 
 type ExtractionStatus = "ok" | "missing" | "low_confidence";
 
+type MetricType = "number" | "currency" | "percent" | "ratio" | "duration";
+
 type Extraction = {
   id: string;
   key: string;
@@ -26,6 +29,9 @@ type Extraction = {
   confidence: number;
   status: ExtractionStatus;
   manuallyConfirmed: boolean;
+  // Tipe metrik section-nya — menentukan cara angka ditampilkan & diedit.
+  // Durasi disimpan DETIK, tapi ditampilkan/diketik sebagai "1j 23mnt 45dtk" / "01:23:45".
+  type: MetricType;
 };
 
 type SavedUpload = {
@@ -477,7 +483,14 @@ export default function UploadManager({
 
   function startEdit(e: Extraction) {
     setEditError((p) => ({ ...p, [e.id]: "" }));
-    setEditDraft((p) => ({ ...p, [e.id]: e.value === null ? "" : String(e.value) }));
+    // Durasi diisi dalam bentuk manusiawi supaya user mengetik "1j 23mnt", bukan 5025.
+    const draft =
+      e.value === null
+        ? ""
+        : e.type === "duration"
+          ? formatDurationID(e.value)
+          : String(e.value);
+    setEditDraft((p) => ({ ...p, [e.id]: draft }));
   }
 
   function cancelEdit(extractionId: string) {
@@ -533,18 +546,32 @@ export default function UploadManager({
 
   // Simpan hasil ketikan user. Kosong = angka memang tidak ada (null/missing).
   // Terima koma sebagai desimal (kebiasaan lokal); tolak yang bukan angka.
-  function saveEdit(uploadId: string, extractionId: string) {
-    const raw = (editDraft[extractionId] ?? "").trim();
+  // Metrik DURASI diketik manusiawi ("1j 23mnt", "01:23:45", "45 s") lalu dikonversi ke
+  // DETIK di sini — server tetap hanya menerima angka (satuan kanonik).
+  function saveEdit(uploadId: string, e: Extraction) {
+    const raw = (editDraft[e.id] ?? "").trim();
     if (raw === "") {
-      void patchExtraction(uploadId, extractionId, null);
+      void patchExtraction(uploadId, e.id, null);
+      return;
+    }
+    if (e.type === "duration") {
+      const seconds = parseDurationToSeconds(raw);
+      if (seconds === null) {
+        setEditError((p) => ({
+          ...p,
+          [e.id]: "Format durasi tidak terbaca. Contoh: 01:23:45, 45 s, 12 min, 1h 30min.",
+        }));
+        return;
+      }
+      void patchExtraction(uploadId, e.id, seconds);
       return;
     }
     const num = Number(raw.replace(",", "."));
     if (!Number.isFinite(num)) {
-      setEditError((p) => ({ ...p, [extractionId]: "Masukkan angka yang valid." }));
+      setEditError((p) => ({ ...p, [e.id]: "Masukkan angka yang valid." }));
       return;
     }
-    void patchExtraction(uploadId, extractionId, num);
+    void patchExtraction(uploadId, e.id, num);
   }
 
   // Konfirmasi satu-klik untuk baris ragu: nilai tetap, status jadi ok + tanda manual.
@@ -1251,7 +1278,7 @@ export default function UploadManager({
                                           setEditDraft((p) => ({ ...p, [e.id]: ev.target.value }))
                                         }
                                         onKeyDown={(ev) => {
-                                          if (ev.key === "Enter") saveEdit(u.id, e.id);
+                                          if (ev.key === "Enter") saveEdit(u.id, e);
                                           if (ev.key === "Escape") cancelEdit(e.id);
                                         }}
                                         autoFocus
@@ -1266,8 +1293,11 @@ export default function UploadManager({
                                     </div>
                                   ) : (
                                     // Mode baca saja: pemisah ribuan id-ID, murni kosmetik.
-                                    // Input Edit diisi dari String(e.value) di startEdit, bukan dari teks ini.
-                                    formatValueID(e.value)
+                                    // Input Edit diisi terpisah di startEdit, bukan dari teks ini.
+                                    // Durasi ditampilkan manusiawi ("1j 23mnt"), bukan detik mentah.
+                                    e.type === "duration" && e.value !== null
+                                      ? formatDurationID(e.value)
+                                      : formatValueID(e.value)
                                   )}
                                 </td>
                                 <td className="py-1 pr-2 text-fg-3 truncate max-w-[10rem]">
@@ -1295,7 +1325,7 @@ export default function UploadManager({
                                   {isEditing ? (
                                     <>
                                       <button
-                                        onClick={() => saveEdit(u.id, e.id)}
+                                        onClick={() => saveEdit(u.id, e)}
                                         disabled={editSaving[e.id]}
                                         className="btn-primary px-2 py-0.5 text-[10px]"
                                       >

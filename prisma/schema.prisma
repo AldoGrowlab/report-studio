@@ -58,6 +58,9 @@ enum MetricType {
   currency
   percent
   ratio
+  // Jul 2026 — durasi. Nilai disimpan dalam satuan KANONIK DETIK di Extraction.value
+  // (angka penuh, Prinsip #6); bentuk "1j 23mnt 45dtk" hanya saat dibahasakan.
+  duration
 }
 
 model SectionMetric {
