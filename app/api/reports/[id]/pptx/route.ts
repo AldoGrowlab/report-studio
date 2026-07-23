@@ -6,6 +6,7 @@ import { getStorage } from "@/lib/storage";
 import { groupBySection } from "@/lib/uploads-view";
 import { formatMonthID } from "@/lib/period";
 import { isDarkColor } from "@/lib/theme";
+import { isPrimaryMonth, displayReportPeriod } from "@/lib/report-period";
 import { formatPercentID, OVERLAP_NOTE } from "@/lib/derived";
 import sharp from "sharp";
 import {
@@ -50,6 +51,8 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/reports/[id
       { status: 400 }
     );
   }
+
+  const pair = { periodeUtama: report.periodeUtama, periodePembanding: report.periodePembanding };
 
   const insightBySection = new Map(
     report.insights.map((i) => [i.sectionId, { points: i.points, numbers: i.numbers }])
@@ -101,12 +104,16 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/reports/[id
       const photos: PptPhoto[] = [];
       let missingPhotos = 0;
       // Section perbandingan periode: foto PERIODE UTAMA selalu di ATAS, foto pembanding
-      // (bukan utama) di bawah — konsisten di semua slide. Sort STABIL: isPrimaryPeriod
-      // dulu, sisanya tetap urut input (createdAt). Section non-perbandingan TIDAK diubah
-      // (semua isPrimaryPeriod=false + tanpa periodMonth → urutan input apa adanya).
+      // di bawah — konsisten di semua slide. Status utama TURUNAN dari pasangan report
+      // (Poin 2): isPrimaryMonth(pair, periodMonth). Sort STABIL. Section non-perbandingan
+      // TIDAK diubah (tanpa periodMonth → urutan input apa adanya).
       const isComparison = g.items.some((u) => u.periodMonth !== null);
       const items = isComparison
-        ? [...g.items].sort((a, b) => Number(b.isPrimaryPeriod) - Number(a.isPrimaryPeriod))
+        ? [...g.items].sort(
+            (a, b) =>
+              Number(isPrimaryMonth(pair, b.periodMonth)) -
+              Number(isPrimaryMonth(pair, a.periodMonth))
+          )
         : g.items;
       for (let i = 0; i < items.length; i++) {
         const u = items[i];
@@ -239,10 +246,12 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/reports/[id
     }
   }
 
-  // Periode report boleh belum ditentukan (Jul 2026, terisi dari deteksi bulan). Deck
-  // tetap bisa dibuat — Prinsip #3: report selalu jalan sampai selesai, kekurangannya
-  // ditandai, bukan menghentikan proses.
-  const reportPeriodLabel = report.reportPeriod?.trim() || "Periode belum ditentukan";
+  // Periode report boleh belum ditentukan. Deck tetap bisa dibuat — Prinsip #3.
+  // Aturan tampilan tunggal (Poin 2): bulan kanonik dulu, lalu label lama, lalu fallback.
+  const reportPeriodLabel = displayReportPeriod({
+    periodeUtama: report.periodeUtama,
+    reportPeriod: report.reportPeriod,
+  });
 
   const buffer = await buildReportPptx(
     { reportPeriod: reportPeriodLabel, brandName: report.brandName, blocks },

@@ -21,7 +21,7 @@ export async function GET() {
       severity: true,
       note: true,
       createdAt: true,
-      report: { select: { id: true, reportPeriod: true } },
+      report: { select: { id: true, reportPeriod: true, periodeUtama: true } },
     },
   });
 

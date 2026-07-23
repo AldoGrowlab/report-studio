@@ -7,6 +7,7 @@ import { reviseInsight } from "@/lib/analyst";
 import { buildAnalystSources } from "@/lib/insight-source";
 import { checkCompleteness } from "@/lib/completeness";
 import { formatPercentID } from "@/lib/derived";
+import { displayReportPeriod } from "@/lib/report-period";
 import {
   checkConsistency,
   generateConclusion,
@@ -326,7 +327,7 @@ export async function POST(
   try {
     outcome = await generateConclusion({
       platform,
-      reportPeriod: report.reportPeriod ?? "(belum ditentukan)",
+      reportPeriod: displayReportPeriod({ periodeUtama: report.periodeUtama, reportPeriod: report.reportPeriod }),
       kbGeneral: kb?.kbGeneral ?? "",
       kbConclusion: kb?.kbConclusion ?? "",
       sections: working.map((w) => ({ sectionName: w.sectionName, points: w.points })),

@@ -8,6 +8,7 @@ import { isDefaultSubGroup } from "@/lib/subgroups";
 import { recomputeDerivedMetrics } from "@/lib/derived-compute";
 import { parsePeriodText, toPeriodMonth } from "@/lib/period-parser";
 import { formatMonthID } from "@/lib/period";
+import { matchMonthToPair } from "@/lib/report-period";
 
 // POST — ekstrak angka dari satu upload, dipandu expected_metrics section-nya.
 // Mengganti seluruh Extraction lama upload itu (idempoten / bisa re-run).
@@ -22,7 +23,16 @@ export async function POST(_request: Request, ctx: RouteContext<"/api/uploads/[i
   const upload = await prisma.upload.findUnique({
     where: { id },
     include: {
-      report: { select: { id: true, createdById: true, reportPeriod: true, periodDetected: true } },
+      report: {
+        select: {
+          id: true,
+          createdById: true,
+          reportPeriod: true,
+          periodDetected: true,
+          periodeUtama: true,
+          periodePembanding: true,
+        },
+      },
       section: {
         select: {
           name: true,
@@ -134,44 +144,48 @@ export async function POST(_request: Request, ctx: RouteContext<"/api/uploads/[i
     },
   });
 
-  let reportPeriod = upload.report.reportPeriod;
+  // Poin 2 — autofill & guard salah-bulan kini terhadap PASANGAN report (kanonik), bukan
+  // reportPeriod teks. periodeUtama kosong + terdeteksi -> isi (fallback autofill lama).
+  // Sudah ada pasangan + bulan terbaca BUKAN salah satu pasangan ("lain") -> flag salah-bulan.
+  const pair = {
+    periodeUtama: upload.report.periodeUtama,
+    periodePembanding: upload.report.periodePembanding,
+  };
+  let periodeUtama = upload.report.periodeUtama;
   let periodDetected = upload.report.periodDetected;
   let periodMismatch: string | null = null;
 
-  if (parsed) {
-    const detectedLabel = formatMonthID(detectedMonth as string);
-    const currentPeriod = upload.report.reportPeriod?.trim() ?? "";
-    if (currentPeriod === "") {
-      // (a) Bulan report masih kosong -> isi, tandai sumbernya "detected" (badge di UI).
+  if (parsed && detectedMonth) {
+    const detectedLabel = formatMonthID(detectedMonth);
+    if (!pair.periodeUtama) {
+      // (a) periode utama report masih kosong -> isi dari deteksi (badge "terdeteksi").
       const updated = await prisma.report.update({
         where: { id: upload.report.id },
-        data: { reportPeriod: detectedLabel, periodDetected: true },
-        select: { reportPeriod: true, periodDetected: true },
+        data: { periodeUtama: detectedMonth, periodDetected: true },
+        select: { periodeUtama: true, periodDetected: true },
       });
-      reportPeriod = updated.reportPeriod;
+      periodeUtama = updated.periodeUtama;
       periodDetected = updated.periodDetected;
-    } else {
-      // (b) Bulan report sudah ada -> jadi PEMERIKSAAN. Pembandingnya harus sama-sama bisa
-      // dipetakan: label kustom yang tak terbaca parser ("Q2 2026") TIDAK diprotes.
-      const current = parsePeriodText(currentPeriod);
-      if (current && (current.month !== parsed.month || current.year !== parsed.year)) {
-        periodMismatch =
-          `Periode pada foto terbaca ${rawPeriod} (=${detectedLabel}), berbeda dengan ` +
-          `bulan report (${formatMonthID(toPeriodMonth(current))}). ` +
-          `Periksa apakah screenshot salah bulan.`;
-        await prisma.flag.create({
-          data: {
-            reportId: upload.report.id,
-            platform: upload.section.platform,
-            section: upload.section.name,
-            type: "periode",
-            // Menyentuh PRESISI, bukan sekadar rasa narasi: screenshot bulan yang salah
-            // membuat seluruh angka report salah (DESIGN §Sistem Flag).
-            severity: "tinggi",
-            note: periodMismatch,
-          },
-        });
-      }
+    } else if (matchMonthToPair(pair, detectedMonth) === "lain") {
+      // (b) sudah ada pasangan & bulan foto bukan salah satunya -> salah-bulan.
+      const pairLabels = [pair.periodeUtama, pair.periodePembanding]
+        .filter((m): m is string => Boolean(m))
+        .map((m) => formatMonthID(m))
+        .join(" / ");
+      periodMismatch =
+        `Periode pada foto terbaca ${rawPeriod} (=${detectedLabel}), di luar periode report ` +
+        `(${pairLabels}). Periksa apakah screenshot salah bulan.`;
+      await prisma.flag.create({
+        data: {
+          reportId: upload.report.id,
+          platform: upload.section.platform,
+          section: upload.section.name,
+          type: "periode",
+          // Menyentuh PRESISI: screenshot bulan yang salah membuat angka report salah.
+          severity: "tinggi",
+          note: periodMismatch,
+        },
+      });
     }
   }
 
@@ -199,7 +213,7 @@ export async function POST(_request: Request, ctx: RouteContext<"/api/uploads/[i
     extractor: outcome.extractor,
     extractions: extractions.map((e) => ({ ...e, type: typeByKey.get(e.key) ?? "number" })),
     detectedPeriod: { rawText: rawPeriod, month: detectedMonth },
-    reportPeriod,
+    periodeUtama,
     periodDetected,
     periodMismatch,
   });

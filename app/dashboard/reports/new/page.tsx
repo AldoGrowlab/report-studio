@@ -6,20 +6,22 @@ import { formatMonthID } from "@/lib/period";
 
 type Platform = "shopee" | "tiktok";
 
-// Opsi periode: bulan lalu / ini / depan — nilai = label bulan sebenarnya ("Juli 2026")
-// supaya bermakna di report; teks opsi menjelaskan posisinya. Dihitung sekali saat mount.
-function buildPeriodOptions(now: Date) {
-  const y = now.getFullYear();
-  const m = now.getMonth(); // 0-11
-  const monthLabel = (offset: number) => {
-    const d = new Date(y, m + offset, 1);
-    return formatMonthID(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
-  };
-  return [
-    { value: monthLabel(-1), text: `Bulan lalu — ${monthLabel(-1)}` },
-    { value: monthLabel(0), text: `Bulan ini — ${monthLabel(0)}` },
-    { value: monthLabel(1), text: `Bulan depan — ${monthLabel(1)}` },
-  ];
+// Opsi bulan untuk pasangan periode (Poin 2): value = kanonik "YYYY-MM", teks = label
+// Indonesia. 13 bulan terakhir berjalan, cukup untuk periode utama & pembanding.
+function buildMonthOptions(now: Date) {
+  const opts: { value: string; text: string }[] = [];
+  let y = now.getFullYear();
+  let m = now.getMonth() + 1; // 1-12
+  for (let i = 0; i < 13; i++) {
+    const value = `${y}-${String(m).padStart(2, "0")}`;
+    opts.push({ value, text: formatMonthID(value) });
+    m--;
+    if (m === 0) {
+      m = 12;
+      y--;
+    }
+  }
+  return opts;
 }
 
 export default function NewReportPage() {
@@ -32,8 +34,11 @@ export default function NewReportPage() {
       prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]
     );
   const [brandName, setBrandName] = useState("");
-  const [periodOptions] = useState(() => buildPeriodOptions(new Date()));
-  const [reportPeriod, setReportPeriod] = useState(() => buildPeriodOptions(new Date())[1].value);
+  const [monthOptions] = useState(() => buildMonthOptions(new Date()));
+  // Pasangan bulan (Poin 2), keduanya boleh dilewati. Default utama = bulan lalu (report
+  // biasanya dibuat untuk bulan yang baru lewat); pembanding kosong.
+  const [periodeUtama, setPeriodeUtama] = useState(() => buildMonthOptions(new Date())[1].value);
+  const [periodePembanding, setPeriodePembanding] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -44,7 +49,7 @@ export default function NewReportPage() {
       const res = await fetch("/api/reports", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platforms, brandName, reportPeriod }),
+        body: JSON.stringify({ platforms, brandName, periodeUtama, periodePembanding }),
       });
       if (res.status === 403) {
         router.push("/login");
@@ -122,24 +127,46 @@ export default function NewReportPage() {
             </p>
           </div>
           <div>
-            <label className="label-sm mb-1.5 block">Periode report</label>
+            <label className="label-sm mb-1.5 block">Periode utama</label>
             <select
-              value={reportPeriod}
-              onChange={(e) => setReportPeriod(e.target.value)}
+              value={periodeUtama}
+              onChange={(e) => {
+                const v = e.target.value;
+                setPeriodeUtama(v);
+                // Pembanding tak bermakna tanpa utama; kosongkan bila utama dikosongkan
+                // atau bila keduanya jadi sama.
+                if (!v || v === periodePembanding) setPeriodePembanding("");
+              }}
               className="select w-full"
             >
-              {/* Jul 2026 — boleh dikosongkan: bulan terisi sendiri dari teks periode yang
-                  terbaca di screenshot pertama yang diekstrak (lihat DESIGN §Deteksi Bulan). */}
+              {/* Boleh dikosongkan: periode utama terisi sendiri dari periode yang terbaca
+                  di screenshot pertama yang diekstrak (fallback Deteksi Bulan). */}
               <option value="">— deteksi dari foto —</option>
-              {periodOptions.map((o) => (
+              {monthOptions.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.text}
                 </option>
               ))}
             </select>
+            <label className="label-sm mb-1.5 mt-3 block">Periode pembanding (opsional)</label>
+            <select
+              value={periodePembanding}
+              onChange={(e) => setPeriodePembanding(e.target.value)}
+              disabled={!periodeUtama}
+              className="select w-full disabled:opacity-50"
+            >
+              <option value="">— tanpa pembanding —</option>
+              {monthOptions
+                .filter((o) => o.value !== periodeUtama)
+                .map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.text}
+                  </option>
+                ))}
+            </select>
             <p className="mt-1.5 text-xs text-fg-3">
-              Kosongkan untuk mengisi otomatis dari periode yang tertulis di screenshot.
-              Bisa diubah kapan saja di halaman report.
+              Bulan foto hanya boleh salah satu dari pasangan ini. Pembanding dipakai section
+              perbandingan antar bulan; kosongkan bila report satu bulan saja.
             </p>
           </div>
 

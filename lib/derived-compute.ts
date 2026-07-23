@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { formatRef, type MetricRef } from "@/lib/derived";
 import { resolveDerived, resolveOperand, type OperandPhoto } from "@/lib/derived-resolve";
+import { isPrimaryMonth } from "@/lib/report-period";
 
 // Langkah COMPUTE metrik turunan (Fase 2b) — deterministik, tanpa model.
 //
@@ -23,9 +24,10 @@ const refOf = (
 export async function recomputeDerivedMetrics(reportId: string): Promise<number> {
   const report = await prisma.report.findUnique({
     where: { id: reportId },
-    select: { id: true, platforms: true },
+    select: { id: true, platforms: true, periodeUtama: true, periodePembanding: true },
   });
   if (!report) return 0;
+  const pair = { periodeUtama: report.periodeUtama, periodePembanding: report.periodePembanding };
 
   // Definisi turunan HANYA dari section se-platform dengan report ini.
   const sections = await prisma.section.findMany({
@@ -57,7 +59,9 @@ export async function recomputeDerivedMetrics(reportId: string): Promise<number>
       photos: matching.map((u) => {
         const e = u.extractions.find((x) => x.key === ref.metricKey);
         return {
-          isPrimaryPeriod: u.isPrimaryPeriod,
+          // Status "periode utama" = TURUNAN dari pasangan report (Poin 2), bukan lagi
+          // flag per foto. Guard 2b (aturan foto-periode-utama) tak berubah maknanya.
+          isPrimaryPeriod: isPrimaryMonth(pair, u.periodMonth),
           value: e?.value ?? null,
           hasMetric: e !== undefined,
         };

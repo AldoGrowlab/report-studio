@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { groupFlags, type FlagItem } from "@/lib/flags-view";
+import { displayReportPeriod } from "@/lib/report-period";
 
 // Tahap 9 — dashboard flag founder: ALAT PERBAIKAN KB, bukan sekadar daftar error
 // (DESIGN §Sistem Flag). Flag lintas report dikelompokkan per (platform, section) dengan
@@ -119,7 +120,7 @@ export default function FlagsPage() {
                             href={`/dashboard/reports/${f.report.id}`}
                             className="text-xs text-accent transition-colors hover:text-accent-hi"
                           >
-                            Report {f.report.reportPeriod ?? "tanpa periode"} →
+                            Report {displayReportPeriod({ periodeUtama: f.report.periodeUtama, reportPeriod: f.report.reportPeriod })} →
                           </Link>
                           <span className="text-[10px] text-fg-3">
                             {new Date(f.createdAt).toLocaleString("id-ID")}

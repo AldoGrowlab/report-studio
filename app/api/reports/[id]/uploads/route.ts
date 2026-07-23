@@ -6,15 +6,16 @@ import { getSession } from "@/lib/session";
 import { canAccessReport, MAX_UPLOAD_BYTES } from "@/lib/reports";
 import { getStorage, isAllowedImageType, buildImageKey } from "@/lib/storage";
 import { isValidPeriodMonth, formatMonthID } from "@/lib/period";
+import { periodMonthOptions } from "@/lib/report-period";
 import { DEFAULT_SUB_GROUP_KEY } from "@/lib/subgroups";
 
 // POST — upload satu screenshot + label section (satu foto satu label).
 // Body: multipart/form-data { file, sectionId, subGroupKey?, periodMonth?, isPrimaryPeriod? }
 // subGroupKey WAJIB untuk section ber-sub-grup (Fase 1); untuk section biasa diabaikan
 // (jatuh ke sentinel "_default").
-// periodMonth ("YYYY-MM") WAJIB untuk section ber-perbandingan-periode (Tahap 6b);
-// untuk section biasa diabaikan (null/false). isPrimaryPeriod: maks SATU per
-// (report, section) — menandai utama baru meng-unset yang lama (transaksi).
+// periodMonth ("YYYY-MM") WAJIB untuk section ber-perbandingan-periode, dan HARUS salah
+// satu pasangan bulan report (Poin 2). Status "periode utama" tak lagi dikirim/disimpan
+// per foto — ia turunan dari pasangan report.
 export async function POST(request: Request, ctx: RouteContext<"/api/reports/[id]/uploads">) {
   const session = await getSession();
   if (!session) {
@@ -95,19 +96,34 @@ export async function POST(request: Request, ctx: RouteContext<"/api/reports/[id
     subGroupKey = raw;
   }
 
-  // Tahap 6b — penanda periode, HANYA berlaku untuk section ber-perbandingan.
+  // Poin 2 — penanda periode, HANYA untuk section ber-perbandingan. Bulan foto WAJIB salah
+  // satu dari pasangan report (periode utama / pembanding); status "periode utama" tak lagi
+  // dipilih per foto, ia turunan dari bulan yang cocok periode utama report.
+  const pair = { periodeUtama: report.periodeUtama, periodePembanding: report.periodePembanding };
   let periodMonth: string | null = null;
-  let isPrimaryPeriod = false;
   if (section.usesPeriodComparison) {
-    const rawMonth = form.get("periodMonth");
-    if (typeof rawMonth !== "string" || !isValidPeriodMonth(rawMonth)) {
+    const options = periodMonthOptions(pair);
+    if (options.length === 0) {
       return NextResponse.json(
-        { error: "Section ini pakai perbandingan periode — pilih bulan untuk foto ini." },
+        {
+          error:
+            "Report ini belum menetapkan pasangan bulan (periode utama & pembanding). Atur periode report dulu sebelum mengunggah foto perbandingan.",
+        },
+        { status: 400 }
+      );
+    }
+    const rawMonth = form.get("periodMonth");
+    if (typeof rawMonth !== "string" || !isValidPeriodMonth(rawMonth) || !options.includes(rawMonth)) {
+      return NextResponse.json(
+        {
+          error: `Bulan foto harus salah satu periode report: ${options
+            .map((m) => formatMonthID(m))
+            .join(" atau ")}.`,
+        },
         { status: 400 }
       );
     }
     periodMonth = rawMonth;
-    isPrimaryPeriod = form.get("isPrimaryPeriod") === "true";
 
     // Satu bulan = SATU foto per (report, section, SUB-GRUP) — perbandingan berantai butuh
     // tepat satu nilai per metrik per bulan (Tahap 6b-B; tanpa ini persen jadi ambigu).
@@ -143,29 +159,19 @@ export async function POST(request: Request, ctx: RouteContext<"/api/reports/[id
 
   let upload;
   try {
-    upload = await prisma.$transaction(async (tx) => {
-      if (isPrimaryPeriod) {
-        // Satu utama per (report, section): utama baru meng-unset yang lama.
-        // Satu utama per (report, section, SUB-GRUP) — tiap tool punya periode utamanya
-        // sendiri, karena perbandingan antar bulan juga dihitung per tool.
-        await tx.upload.updateMany({
-          where: { reportId, sectionId: section.id, subGroupKey, isPrimaryPeriod: true },
-          data: { isPrimaryPeriod: false },
-        });
-      }
-      return tx.upload.create({
-        data: {
-          reportId,
-          platform: section.platform,
-          sectionId: section.id,
-          imageUrl: key,
-          labelConfirmed: true,
-          periodMonth,
-          isPrimaryPeriod,
-          subGroupKey,
-        },
-        include: { section: { select: { id: true, name: true } } },
-      });
+    // Tak ada lagi unset "periode utama" per foto — status utama turunan dari pasangan
+    // report, jadi menandai satu foto tidak memengaruhi foto lain.
+    upload = await prisma.upload.create({
+      data: {
+        reportId,
+        platform: section.platform,
+        sectionId: section.id,
+        imageUrl: key,
+        labelConfirmed: true,
+        periodMonth,
+        subGroupKey,
+      },
+      include: { section: { select: { id: true, name: true } } },
     });
   } catch (e) {
     // Audit M7: unique (report, section, periodMonth) menangkap race dua upload bulan

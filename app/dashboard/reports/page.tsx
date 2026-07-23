@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { displayReportPeriod } from "@/lib/report-period";
 import { getSession } from "@/lib/session";
 import { reportProgress } from "@/lib/reports";
 
@@ -223,7 +224,7 @@ export default async function ReportsPage({
                   </div>
                   <p className="mt-2 text-sm font-medium text-fg">
                     {r.brandName ?? "Tanpa nama brand"}
-                    <span className="ml-2 font-normal text-fg-3">· {r.reportPeriod ?? "periode belum ditentukan"}</span>
+                    <span className="ml-2 font-normal text-fg-3">· {displayReportPeriod({ periodeUtama: r.periodeUtama, reportPeriod: r.reportPeriod })}</span>
                   </p>
                   <p className="mt-1 text-xs text-fg-3">
                     {r.createdBy.email} ·{" "}

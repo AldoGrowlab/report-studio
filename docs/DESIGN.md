@@ -521,17 +521,26 @@ Label sama-sama dikirim ke prompt vision** (`lib/extractor.ts`, format
 > `Upload.isPrimaryPeriod` per foto.
 > - **2a (SELESAI):** kolom pasangan + helper murni (`isPrimaryMonth`, `periodMonthOptions`,
 >   `matchMonthToPair`, `displayReportPeriod`) + migrasi ADITIF + backfill
->   `reportPeriod → periodeUtama` (label kustom tak terparse → null). Konsumen BELUM disentuh
->   → perilaku report lama identik.
-> - **2b:** konsumen (rantai perbandingan, kontribusi turunan, kelengkapan, urutan PPT,
->   dropdown bulan foto, deteksi bulan sebagai pencocok) beralih membaca dari pasangan.
-> - **2c:** edit pasangan + warning anomali + recompute; migrasi buang `isPrimaryPeriod`.
-> - **`reportPeriod` DIPERTAHANKAN** sebagai label tampilan fallback (deprecated, read-only,
->   tak pernah dibaca logika). Aturan tampilan tunggal di semua tempat:
->   `formatMonthID(periodeUtama) ?? reportPeriod ?? "Periode belum ditentukan"`.
+>   `reportPeriod → periodeUtama` (label kustom tak terparse → null).
+> - **2b (SELESAI):** semua konsumen beralih ke pasangan. Status "periode utama" foto =
+>   `bulanFoto == periodeUtama` (turunan) di insight-source (validasi + chain + `primaryMonth`),
+>   derived-compute (pemilihan operan periode utama), dan urutan PPT. Bulan foto DIBATASI ke
+>   pasangan di route upload & PATCH (tombol "Jadikan utama" dan checkbox "periode utama"
+>   DIHAPUS — status kini turunan). Form buat report meminta pasangan (dropdown bulan
+>   kanonik, keduanya boleh dilewati). Deteksi bulan (client) jadi PENCOCOK: bulan terbaca
+>   dipetakan ke utama/pembanding → isi label; "lain" → peringatan salah-bulan, label
+>   dibiarkan kosong; tak terbaca → manual. Autofill `periodeUtama` yang kosong terjadi
+>   SERVER saat ekstraksi (fallback lama). Semua tampilan periode lewat `displayReportPeriod`.
+>   `isPrimaryPeriod` masih ADA di DB (tak dibaca lagi) — dibuang 2c.
+> - **2c:** edit pasangan di pengaturan + konfirmasi + warning anomali (foto berlabel di luar
+>   pasangan baru) + recompute; migrasi buang `isPrimaryPeriod`.
+> - **`reportPeriod` DIPERTAHANKAN** sebagai label tampilan/filter DENORMALISASI (deprecated;
+>   diisi dari `periodeUtama` saat buat report; tak pernah dibaca untuk keputusan periode).
+>   Aturan tampilan tunggal: `formatMonthID(periodeUtama) ?? reportPeriod ??
+>   "Periode belum ditentukan"`. Filter daftar report tetap pada `reportPeriod` supaya report
+>   lama ber-label kustom tetap terfilter persis.
 >
-> Deskripsi di bawah adalah model per-foto LAMA; masih akurat untuk kode yang belum beralih
-> (sampai 2b), lalu diperbarui saat konsumen pindah.
+> Deskripsi per-foto di bawah adalah model LAMA (pra-2b); dipertahankan sbg catatan sejarah.
 
 - **Opt-in per section.** Founder menandai saat membuat section apakah section itu memakai
   perbandingan periode. TIDAK semua section pakai.

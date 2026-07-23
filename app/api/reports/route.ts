@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import type { Platform } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
-import { MAX_BRAND_NAME, MAX_REPORT_PERIOD } from "@/lib/reports";
+import { MAX_BRAND_NAME } from "@/lib/reports";
+import { isValidPeriodMonth, formatMonthID } from "@/lib/period";
 
 // POST — buat report draft (semua user login). Satu report boleh mencakup SATU atau DUA
 // platform (Jul 2026): Report.platforms memang array sejak awal, dan seluruh alur hilir
@@ -13,7 +14,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Tidak diizinkan." }, { status: 403 });
   }
 
-  let body: { platforms?: unknown; reportPeriod?: string; brandName?: string };
+  let body: {
+    platforms?: unknown;
+    brandName?: string;
+    periodeUtama?: unknown;
+    periodePembanding?: unknown;
+  };
   try {
     body = await request.json();
   } catch {
@@ -52,30 +58,36 @@ export async function POST(request: Request) {
     );
   }
 
-  // Jul 2026 — periode OPSIONAL: kosong berarti menunggu Deteksi Bulan Otomatis mengisi
-  // dari teks periode di screenshot (DESIGN §Deteksi Bulan Otomatis). Tetap harus berupa
-  // teks kalau dikirim — `reportPeriod: 123` dulu meledak jadi 500 tanpa pesan.
-  if (body.reportPeriod !== undefined && typeof body.reportPeriod !== "string") {
-    return NextResponse.json({ error: "Periode report harus berupa teks." }, { status: 400 });
-  }
-  const reportPeriod = (body.reportPeriod ?? "").trim();
-  // Periode ikut masuk mentah ke prompt Validator, jadi baris baru ditolak juga.
-  // JUJUR TENTANG BATASNYA: ini MEMPERSEMPIT ruang injeksi, bukan menutupnya — kalimat
-  // satu baris di bawah 60 karakter masih bisa lewat. Dinilai memadai karena alat ini
-  // internal, operator tepercaya, periode normalnya dari dropdown, dan hasil Validator
-  // terlihat di layar sebelum PPT diunduh. Kalau suatu saat dipakai pihak tak tepercaya,
-  // ini harus diganti allowlist format ("Juni 2026"), bukan sekadar batas panjang.
-  if (reportPeriod.length > MAX_REPORT_PERIOD || /[\r\n]/.test(reportPeriod)) {
-    return NextResponse.json(
-      { error: `Periode report maksimal ${MAX_REPORT_PERIOD} karakter, tanpa baris baru.` },
-      { status: 400 }
-    );
-  }
+  // Poin 2 — pasangan bulan level report (kanonik "YYYY-MM"), keduanya OPSIONAL. Kosong =
+  // menunggu Deteksi Bulan Otomatis mengisi periodeUtama dari screenshot (fallback lama).
+  const readMonth = (v: unknown, label: string): { ok: true; value: string | null } | { ok: false; error: string } => {
+    if (v === undefined || v === null || v === "") return { ok: true, value: null };
+    if (typeof v !== "string" || !isValidPeriodMonth(v)) {
+      return { ok: false, error: `${label} tidak valid.` };
+    }
+    return { ok: true, value: v };
+  };
+  const utamaR = readMonth(body.periodeUtama, "Periode utama");
+  if (!utamaR.ok) return NextResponse.json({ error: utamaR.error }, { status: 400 });
+  const pembandingR = readMonth(body.periodePembanding, "Periode pembanding");
+  if (!pembandingR.ok) return NextResponse.json({ error: pembandingR.error }, { status: 400 });
+  const periodeUtama = utamaR.value;
+  let periodePembanding = pembandingR.value;
+  // Pembanding tanpa utama tak bermakna; pembanding == utama itu redundan -> abaikan.
+  if (!periodeUtama) periodePembanding = null;
+  if (periodePembanding && periodePembanding === periodeUtama) periodePembanding = null;
+
+  // reportPeriod = label tampilan/filter DENORMALISASI dari periodeUtama (bukan sumber
+  // logika — semua keputusan periode membaca periodeUtama). Menjaga filter daftar report
+  // tetap berfungsi persis seperti sebelumnya.
+  const reportPeriod = periodeUtama ? formatMonthID(periodeUtama) : null;
 
   const report = await prisma.report.create({
     data: {
       brandName,
-      reportPeriod: reportPeriod === "" ? null : reportPeriod,
+      reportPeriod,
+      periodeUtama,
+      periodePembanding,
       platforms: platforms as Platform[],
       createdById: session.userId,
     },

@@ -8,7 +8,8 @@ import { MAX_TEXT_LENGTH } from "@/lib/text-metric";
 import { ANALYSIS_MAX_PX } from "@/lib/merge-suggest";
 import { matchSubGroup } from "@/lib/subgroups";
 import { parsePointLine, splitByNumbers } from "@/lib/insight-format";
-import { monthOptions, formatMonthID } from "@/lib/period";
+import { formatMonthID } from "@/lib/period";
+import { periodMonthOptions, isPrimaryMonth, matchMonthToPair } from "@/lib/report-period";
 import { MAX_UPLOAD_BYTES } from "@/lib/reports";
 import MergePhotosModal from "./MergePhotosModal";
 
@@ -50,9 +51,9 @@ type SavedUpload = {
   sectionName: string;
   platform: string;
   imageSrc: string;
-  // Tahap 6b — hanya terisi untuk section ber-perbandingan-periode.
+  // Tahap 6b — hanya terisi untuk section ber-perbandingan-periode. Status "periode utama"
+  // TIDAK disimpan lagi per foto (Poin 2) — diturunkan dari pasangan report.
   periodMonth: string | null;
-  isPrimaryPeriod: boolean;
   subGroupKey: string;
   extractions: Extraction[];
 };
@@ -124,15 +125,16 @@ type PendingItem = {
   sectionId: string;
   // Tahap 6b — dipakai hanya saat section terpilih ber-perbandingan-periode.
   periodMonth: string;
-  isPrimaryPeriod: boolean;
   saving: boolean;
   error: string;
   // Deteksi Bulan Otomatis (Jul 2026) — jalur pengisi label, jalan saat foto DIPILIH.
   // periodTouched = operator sudah memilih sendiri; deteksi TIDAK PERNAH menimpanya,
-  // termasuk kalau hasilnya baru datang belakangan.
+  // termasuk kalau hasilnya baru datang belakangan. periodMismatch = bulan foto terbaca
+  // di LUAR pasangan report (Poin 2) — peringatan salah bulan, label dibiarkan kosong.
   periodDetecting: boolean;
   periodDetected: boolean;
   periodTouched: boolean;
+  periodMismatch: string | null;
   // Fase 1 — sub-grup foto. tabLabel disimpan APA ADANYA dari pembaca konteks; pencocokan
   // ke sub-grup baru bisa dilakukan setelah section dipilih (KB-nya milik section).
   tabLabel: string | null;
@@ -194,6 +196,8 @@ let localCounter = 0;
 export default function UploadManager({
   reportId,
   platforms,
+  periodeUtama,
+  periodePembanding,
   sections,
   initialUploads,
   initialInsights,
@@ -204,6 +208,10 @@ export default function UploadManager({
 }: {
   reportId: string;
   platforms: ("shopee" | "tiktok")[];
+  // Poin 2 — pasangan bulan level report. Bulan foto hanya boleh salah satu dari ini,
+  // dan status "periode utama" foto = turunan (bulanFoto == periodeUtama).
+  periodeUtama: string | null;
+  periodePembanding: string | null;
   sections: SectionOption[];
   initialUploads: SavedUpload[];
   initialInsights: SectionInsight[];
@@ -226,8 +234,11 @@ export default function UploadManager({
     sections.find((s) => s.id === id)?.subGroups ?? [];
   const subGroupLabel = (sectionId: string, key: string) =>
     sectionSubGroups(sectionId).find((g) => g.key === key)?.label ?? key;
-  // Dropdown penanda bulan (Tahap 6b): 13 bulan terakhir berjalan, dihitung sekali per mount.
-  const [monthOpts] = useState(() => monthOptions(new Date(), 13));
+  // Poin 2 — bulan foto hanya boleh salah satu dari pasangan report (2 opsi; 1 bila tanpa
+  // pembanding). Menggantikan daftar 13 bulan bebas.
+  const pair = { periodeUtama, periodePembanding };
+  const monthOpts = periodMonthOptions(pair).map((value) => ({ value, label: formatMonthID(value) }));
+  const isPrimary = (periodMonth: string | null) => isPrimaryMonth(pair, periodMonth);
 
   function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
@@ -237,11 +248,11 @@ export default function UploadManager({
       previewUrl: URL.createObjectURL(file),
       sectionId: "",
       periodMonth: "",
-      isPrimaryPeriod: false,
       saving: false,
       periodDetecting: false,
       periodDetected: false,
       periodTouched: false,
+      periodMismatch: null,
       tabLabel: null,
       subGroupKey: "",
       subGroupDetected: false,
@@ -306,14 +317,25 @@ export default function UploadManager({
       const data = await res.json().catch(() => ({}));
       const month = typeof data.month === "string" ? data.month : null;
       const tabLabel = typeof data.tabLabel === "string" ? data.tabLabel : null;
-      // Pilihan manual MENANG, termasuk kalau operator memilih selagi deteksi berjalan.
+      // Poin 2 — deteksi jadi PENCOCOK ke pasangan report: bulan terbaca dipetakan ke
+      // periode utama / pembanding. Bulan di LUAR pasangan -> label DIBIARKAN kosong +
+      // peringatan salah-bulan (bukan diisi diam-diam). Pilihan manual tetap MENANG.
+      const match = matchMonthToPair(pair, month);
       setPending((prev) =>
         prev.map((p) => {
           if (p.localId !== localId) return p;
           const next = { ...p, tabLabel };
-          if (month && !p.periodTouched && p.periodMonth === "") {
-            next.periodMonth = month;
-            next.periodDetected = true;
+          if (month && (match === "utama" || match === "pembanding")) {
+            if (!p.periodTouched && p.periodMonth === "") {
+              next.periodMonth = month;
+              next.periodDetected = true;
+            }
+            next.periodMismatch = null;
+          } else if (month && match === "lain") {
+            // Terbaca, tapi di luar periode report -> jangan isi, peringatkan.
+            next.periodMismatch = `Foto terbaca ${formatMonthID(month)}, di luar periode report (${monthOpts
+              .map((m) => m.label)
+              .join(" / ")}).`;
           }
           // Sub-grup baru bisa dicocokkan kalau section-nya sudah dipilih — daftar
           // sub-grup milik section, bukan milik foto. Kalau belum, tabLabel disimpan dan
@@ -326,16 +348,6 @@ export default function UploadManager({
           return next;
         })
       );
-      if (!month) return;
-      // Bulan report ikut terisi dari foto pertama yang terdeteksi. Aturan "hanya saat
-      // kosong" ditegakkan SERVER, jadi deteksi paralel tidak saling menimpa.
-      const patched = await fetch(`/api/reports/${reportId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reportPeriod: formatMonthID(month), detected: true }),
-      });
-      const result = await patched.json().catch(() => ({}));
-      if (patched.ok && result.changed) router.refresh();
     } catch {
       /* diam — operator memilih bulan manual */
     } finally {
@@ -358,11 +370,11 @@ export default function UploadManager({
         previewUrl: URL.createObjectURL(file),
         sectionId,
         periodMonth: "",
-        isPrimaryPeriod: false,
         saving: false,
         periodDetecting: false,
         periodDetected: false,
         periodTouched: false,
+        periodMismatch: null,
         tabLabel: null,
         // Hasil Gabung Foto mewarisi label sub-grup sumbernya (aturan 1c) — modal yang
         // menentukan, karena ia yang tahu foto-foto asalnya.
@@ -442,7 +454,6 @@ export default function UploadManager({
     }
     if (usesComparison) {
       fd.append("periodMonth", item.periodMonth);
-      fd.append("isPrimaryPeriod", String(item.isPrimaryPeriod));
     }
 
     try {
@@ -457,17 +468,11 @@ export default function UploadManager({
         patchPending(item.localId, { saving: false, error: data.error || `Gagal menyimpan (kode ${res.status}).` });
         return;
       }
-      // Pindah dari pending ke saved. Utama baru => utama lama section itu ikut ter-unset
-      // di server (transaksi) — cerminkan di state lokal juga.
+      // Pindah dari pending ke saved. Status "periode utama" tak lagi disimpan/di-unset —
+      // ia turunan dari pasangan report, jadi tak ada foto lain yang perlu disentuh.
       URL.revokeObjectURL(item.previewUrl);
       setSaved((prev) => [
-        ...prev.map((u) =>
-          data.upload.isPrimaryPeriod &&
-          u.sectionId === data.upload.sectionId &&
-          u.subGroupKey === (data.upload.subGroupKey ?? "_default")
-            ? { ...u, isPrimaryPeriod: false }
-            : u
-        ),
+        ...prev,
         {
           id: data.upload.id,
           sectionId: data.upload.sectionId,
@@ -475,7 +480,6 @@ export default function UploadManager({
           platform: data.upload.platform,
           imageSrc: `/api/uploads/${data.upload.id}/image`,
           periodMonth: data.upload.periodMonth ?? null,
-          isPrimaryPeriod: Boolean(data.upload.isPrimaryPeriod),
           subGroupKey: data.upload.subGroupKey ?? "_default",
           extractions: [],
         },
@@ -487,20 +491,18 @@ export default function UploadManager({
     }
   }
 
-  // Tahap 6b — ubah penanda periode foto tersimpan (ganti bulan / jadikan utama).
-  async function patchSavedPeriod(
-    u: SavedUpload,
-    patch: { periodMonth?: string; isPrimaryPeriod?: true }
-  ) {
+  // Poin 2 — ubah BULAN foto tersimpan (hanya ke salah satu pasangan report). Status utama
+  // tak lagi diubah per foto (turunan), jadi tombol "Jadikan utama" dihapus.
+  async function patchSavedPeriod(u: SavedUpload, periodMonth: string) {
     setRowBusy((p) => ({ ...p, [u.id]: true }));
     setRowError((p) => ({ ...p, [u.id]: "" }));
     let res: Response;
-    let data: { upload?: { periodMonth?: string | null; isPrimaryPeriod?: boolean } } = {};
+    let data: { upload?: { periodMonth?: string | null } } = {};
     try {
       res = await fetch(`/api/uploads/${u.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
+        body: JSON.stringify({ periodMonth }),
       });
       data = await res.json().catch(() => ({}));
     } catch {
@@ -517,29 +519,14 @@ export default function UploadManager({
       const err = (data as { error?: string }).error;
       setRowError((p) => ({
         ...p,
-        [u.id]: err || `Gagal mengubah penanda periode (kode ${res.status}).`,
+        [u.id]: err || `Gagal mengubah bulan foto (kode ${res.status}).`,
       }));
       return;
     }
     setSaved((prev) =>
-      prev.map((s) => {
-        if (s.id === u.id) {
-          return {
-            ...s,
-            periodMonth: data.upload?.periodMonth ?? s.periodMonth,
-            isPrimaryPeriod: Boolean(data.upload?.isPrimaryPeriod),
-          };
-        }
-        // Utama baru meng-unset utama lama section yang sama (cermin transaksi server).
-        if (
-          patch.isPrimaryPeriod &&
-          s.sectionId === u.sectionId &&
-          s.subGroupKey === u.subGroupKey
-        ) {
-          return { ...s, isPrimaryPeriod: false };
-        }
-        return s;
-      })
+      prev.map((s) =>
+        s.id === u.id ? { ...s, periodMonth: data.upload?.periodMonth ?? s.periodMonth } : s
+      )
     );
     markStale(u.sectionId, u.platform);
   }
@@ -1318,53 +1305,54 @@ export default function UploadManager({
                   </div>
                 )}
 
-                {/* Tahap 6b — section ber-perbandingan: WAJIB pilih bulan foto ini +
-                    tandai EKSPLISIT bila ini periode utama (tidak pernah otomatis). */}
+                {/* Poin 2 — section ber-perbandingan: pilih bulan foto (hanya salah satu
+                    pasangan report). Status "periode utama" turunan, tak dipilih manual. */}
                 {item.sectionId && sectionUsesComparison(item.sectionId) && (
                   <div className="mt-1.5 flex flex-wrap items-center gap-3">
-                    <select
-                      value={item.periodMonth}
-                      onChange={(e) =>
-                        // Pilihan manual menang PERMANEN: deteksi yang datang belakangan
-                        // tidak akan menimpanya.
-                        patchPending(item.localId, {
-                          periodMonth: e.target.value,
-                          periodTouched: true,
-                          periodDetected: false,
-                          error: "",
-                        })
-                      }
-                      className="select w-full"
-                    >
-                      <option value="">— bulan foto ini —</option>
-                      {monthOpts.map((m) => (
-                        <option key={m.value} value={m.value}>
-                          {m.label}
-                        </option>
-                      ))}
-                    </select>
+                    {monthOpts.length === 0 ? (
+                      <span className="text-[11px] text-warn">
+                        Report belum menetapkan periode — atur periode report dulu.
+                      </span>
+                    ) : (
+                      <select
+                        value={item.periodMonth}
+                        onChange={(e) =>
+                          // Pilihan manual menang PERMANEN atas deteksi yang datang belakangan.
+                          patchPending(item.localId, {
+                            periodMonth: e.target.value,
+                            periodTouched: true,
+                            periodDetected: false,
+                            error: "",
+                          })
+                        }
+                        className="select w-full"
+                      >
+                        <option value="">— bulan foto ini —</option>
+                        {monthOpts.map((m) => (
+                          <option key={m.value} value={m.value}>
+                            {m.label}
+                            {m.value === periodeUtama ? " (utama)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                     {item.periodDetecting && (
                       <span className="text-[10px] text-fg-3">mendeteksi bulan…</span>
                     )}
                     {item.periodDetected && (
                       <span
-                        title="Diisi otomatis dari teks periode di foto. Ubah kapan saja."
+                        title="Dicocokkan dari teks periode di foto. Ubah kapan saja."
                         className="badge bg-accent/15 px-2 text-[10px] text-accent-hi"
                       >
                         terdeteksi
                       </span>
                     )}
-                    <label className="flex items-center gap-1.5 text-xs text-fg-2">
-                      <input
-                        type="checkbox"
-                        checked={item.isPrimaryPeriod}
-                        onChange={(e) =>
-                          patchPending(item.localId, { isPrimaryPeriod: e.target.checked })
-                        }
-                        className="accent-[#5E8BFF]"
-                      />
-                      Periode utama
-                    </label>
+                    {item.periodMonth && isPrimary(item.periodMonth) && (
+                      <span className="badge bg-ok/15 px-2 text-[10px] text-ok">periode utama</span>
+                    )}
+                    {item.periodMismatch && (
+                      <span className="text-[10px] text-warn">{item.periodMismatch}</span>
+                    )}
                   </div>
                 )}
                 {item.error && <p className="mt-1 text-xs text-danger">{item.error}</p>}
@@ -1505,10 +1493,7 @@ export default function UploadManager({
                       <div className="mt-1.5 flex flex-wrap items-center gap-2">
                         <select
                           value={u.periodMonth ?? ""}
-                          onChange={(e) =>
-                            e.target.value &&
-                            patchSavedPeriod(u, { periodMonth: e.target.value })
-                          }
+                          onChange={(e) => e.target.value && patchSavedPeriod(u, e.target.value)}
                           disabled={rowBusy[u.id]}
                           className="select px-2 py-1 text-xs disabled:opacity-50"
                         >
@@ -1516,28 +1501,22 @@ export default function UploadManager({
                           {monthOpts.map((m) => (
                             <option key={m.value} value={m.value}>
                               {m.label}
+                              {m.value === periodeUtama ? " (utama)" : ""}
                             </option>
                           ))}
-                          {/* Bulan lama di luar 13 opsi berjalan tetap tampil apa adanya */}
+                          {/* Bulan lama di luar pasangan report tetap tampil apa adanya
+                              (foto lama pra-Poin 2); operator memindahkannya ke pasangan. */}
                           {u.periodMonth &&
                             !monthOpts.some((m) => m.value === u.periodMonth) && (
                               <option value={u.periodMonth}>
-                                {formatMonthID(u.periodMonth)}
+                                {formatMonthID(u.periodMonth)} (di luar periode)
                               </option>
                             )}
                         </select>
-                        {u.isPrimaryPeriod ? (
-                          <span className="badge bg-accent/15 px-2 text-[10px] text-accent-hi">
+                        {isPrimary(u.periodMonth) && (
+                          <span className="badge bg-ok/15 px-2 text-[10px] text-ok">
                             Periode utama
                           </span>
-                        ) : (
-                          <button
-                            onClick={() => patchSavedPeriod(u, { isPrimaryPeriod: true })}
-                            disabled={rowBusy[u.id]}
-                            className="rounded border border-line-2 px-2 py-0.5 text-[10px] text-fg-3 hover:bg-surface-2 hover:text-fg-2 disabled:opacity-50"
-                          >
-                            {rowBusy[u.id] ? "Menyimpan…" : "Jadikan utama"}
-                          </button>
                         )}
                       </div>
                     )}

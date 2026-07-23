@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { abbreviateNumberID, type AnalystSource } from "@/lib/analyst";
 import { displayMetricName, scopedMetricKey } from "@/lib/subgroups";
+import { isPrimaryMonth } from "@/lib/report-period";
 import { formatPercentID } from "@/lib/derived";
 import {
   computeChainedChanges,
@@ -47,6 +48,16 @@ export async function buildAnalystSources(
     return { ok: false, error: "Section tidak ditemukan." };
   }
 
+  // Poin 2 — status "periode utama" foto adalah TURUNAN dari pasangan bulan report.
+  const report = await prisma.report.findUnique({
+    where: { id: reportId },
+    select: { periodeUtama: true, periodePembanding: true },
+  });
+  const pair = {
+    periodeUtama: report?.periodeUtama ?? null,
+    periodePembanding: report?.periodePembanding ?? null,
+  };
+
   // Urutan createdAt asc = penomoran "Sumber #n" yang sama dengan UI.
   const uploads = await prisma.upload.findMany({
     where: { reportId, sectionId },
@@ -83,6 +94,13 @@ export async function buildAnalystSources(
   // Validasi penanda periode (defensif — server sudah menegakkan saat upload/PATCH,
   // tapi data lama/sudut lain harus tertangkap dengan pesan yang menyuruh membereskan).
   if (section.usesPeriodComparison) {
+    if (!pair.periodeUtama) {
+      return {
+        ok: false,
+        error:
+          "Report ini belum menetapkan periode utama. Atur periode report dulu sebelum menganalisa section perbandingan.",
+      };
+    }
     if (uploads.some((u) => !u.periodMonth)) {
       return {
         ok: false,
@@ -98,10 +116,12 @@ export async function buildAnalystSources(
           error: `Ada dua foto dengan bulan yang sama di ${scopeName(key)} — satu bulan satu foto. Bereskan penanda bulannya dulu.`,
         };
       }
-      if (list.filter((u) => u.isPrimaryPeriod).length !== 1) {
+      // Status utama TURUNAN: tepat satu foto sub-grup ini harus berbulan periode utama.
+      // Bukan lagi flag manual — kalau tak ada, operator melabeli fotonya ke bulan utama.
+      if (list.filter((u) => isPrimaryMonth(pair, u.periodMonth)).length !== 1) {
         return {
           ok: false,
-          error: `Tandai TEPAT satu foto sebagai periode utama di ${scopeName(key)} dulu (tombol "Jadikan utama").`,
+          error: `${scopeName(key)} belum punya tepat satu foto berbulan periode utama (${formatMonthID(pair.periodeUtama)}). Lengkapi dulu.`,
         };
       }
     }
@@ -119,7 +139,7 @@ export async function buildAnalystSources(
     ...(section.usesPeriodComparison
       ? {
           periodLabel: formatMonthID(u.periodMonth as string),
-          isPrimary: u.isPrimaryPeriod,
+          isPrimary: isPrimaryMonth(pair, u.periodMonth),
         }
       : {}),
     metrics: u.extractions
@@ -184,9 +204,9 @@ export async function buildAnalystSources(
     }
     numbers.push(...new Set(changes.map((c) => c.changeText)));
     periodComparison = {
-      // Periode utama = milik sub-grup pertama; semua sub-grup dalam satu section
-      // dilaporkan untuk bulan yang sama, jadi fokus ceritanya tetap satu.
-      primaryMonth: uploads.find((u) => u.isPrimaryPeriod)!.periodMonth as string,
+      // Periode utama = milik report (pasangan bulan), bukan lagi dicari dari flag foto.
+      // Non-null: guard di atas sudah menolak section perbandingan tanpa periodeUtama.
+      primaryMonth: pair.periodeUtama as string,
       changes,
     };
   }

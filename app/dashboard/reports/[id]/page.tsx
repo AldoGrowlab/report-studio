@@ -168,7 +168,6 @@ export default async function ReportDetailPage({
       platform: u.platform,
       imageSrc: `/api/uploads/${u.id}/image`,
       periodMonth: u.periodMonth,
-      isPrimaryPeriod: u.isPrimaryPeriod,
       subGroupKey: u.subGroupKey,
       extractions: u.extractions.map((e) => ({
         id: e.id,
@@ -238,8 +237,10 @@ export default async function ReportDetailPage({
             </h1>
             <ReportPeriodField
               reportId={report.id}
-              initialPeriod={report.reportPeriod}
-              initialDetected={report.periodDetected}
+              periodeUtama={report.periodeUtama}
+              periodePembanding={report.periodePembanding}
+              reportPeriod={report.reportPeriod}
+              detected={report.periodDetected}
             />
           </div>
           <DeleteReportButton reportId={report.id} />
@@ -248,6 +249,8 @@ export default async function ReportDetailPage({
         <UploadManager
           reportId={report.id}
           platforms={report.platforms}
+          periodeUtama={report.periodeUtama}
+          periodePembanding={report.periodePembanding}
           sections={sections}
           initialUploads={initialUploads}
           initialInsights={initialInsights}

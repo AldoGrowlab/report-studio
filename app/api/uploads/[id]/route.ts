@@ -4,10 +4,12 @@ import { getSession } from "@/lib/session";
 import { canAccessReport } from "@/lib/reports";
 import { getStorage } from "@/lib/storage";
 import { isValidPeriodMonth, formatMonthID } from "@/lib/period";
+import { periodMonthOptions } from "@/lib/report-period";
 
-// PATCH — ubah penanda periode foto tersimpan (Tahap 6b, hanya section ber-perbandingan).
-// Body: JSON { periodMonth? } dan/atau { isPrimaryPeriod: true }. Menandai utama baru
-// meng-unset utama lama (report, section) itu — maks SATU utama, ditegakkan server.
+// PATCH — ubah BULAN foto tersimpan (Poin 2, hanya section ber-perbandingan).
+// Body: JSON { periodMonth }. Bulan WAJIB salah satu pasangan report (periode utama /
+// pembanding). Status "periode utama" TIDAK lagi diubah per foto — ia turunan dari pasangan
+// report (bulanFoto == periodeUtama), jadi tombol "Jadikan utama" dihapus.
 export async function PATCH(request: Request, ctx: RouteContext<"/api/uploads/[id]">) {
   const session = await getSession();
   if (!session) {
@@ -19,7 +21,7 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/uploads/[i
   const upload = await prisma.upload.findUnique({
     where: { id },
     include: {
-      report: { select: { createdById: true } },
+      report: { select: { createdById: true, periodeUtama: true, periodePembanding: true } },
       section: { select: { usesPeriodComparison: true } },
     },
   });
@@ -44,59 +46,51 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/uploads/[i
   }
   const b = body as Record<string, unknown> | null;
 
-  const data: { periodMonth?: string; isPrimaryPeriod?: boolean } = {};
-  if (b?.periodMonth !== undefined) {
-    if (typeof b.periodMonth !== "string" || !isValidPeriodMonth(b.periodMonth)) {
-      return NextResponse.json({ error: "Bulan tidak valid." }, { status: 400 });
-    }
-    // Satu bulan = SATU foto per (report, section) — tolak pindah ke bulan yang sudah
-    // dipakai foto lain (Tahap 6b-B, syarat perbandingan berantai).
-    const duplicate = await prisma.upload.findFirst({
-      where: {
-        reportId: upload.reportId,
-        sectionId: upload.sectionId,
-        periodMonth: b.periodMonth,
-        NOT: { id },
-      },
-    });
-    if (duplicate) {
-      return NextResponse.json(
-        {
-          error: `Bulan ${formatMonthID(b.periodMonth)} sudah dipakai foto lain di section ini — satu bulan satu foto.`,
-        },
-        { status: 400 }
-      );
-    }
-    data.periodMonth = b.periodMonth;
-  }
-  if (b?.isPrimaryPeriod === true) {
-    data.isPrimaryPeriod = true;
-  }
-  if (Object.keys(data).length === 0) {
+  if (b?.periodMonth === undefined) {
     return NextResponse.json({ error: "Tidak ada yang diubah." }, { status: 400 });
   }
+  const options = periodMonthOptions({
+    periodeUtama: upload.report.periodeUtama,
+    periodePembanding: upload.report.periodePembanding,
+  });
+  if (typeof b.periodMonth !== "string" || !isValidPeriodMonth(b.periodMonth) || !options.includes(b.periodMonth)) {
+    return NextResponse.json(
+      {
+        error: `Bulan foto harus salah satu periode report: ${options
+          .map((m) => formatMonthID(m))
+          .join(" atau ")}.`,
+      },
+      { status: 400 }
+    );
+  }
 
-  const updated = await prisma.$transaction(async (tx) => {
-    if (data.isPrimaryPeriod) {
-      await tx.upload.updateMany({
-        where: {
-          reportId: upload.reportId,
-          sectionId: upload.sectionId,
-          isPrimaryPeriod: true,
-          NOT: { id },
-        },
-        data: { isPrimaryPeriod: false },
-      });
-    }
-    return tx.upload.update({ where: { id }, data });
+  // Satu bulan = SATU foto per (report, section, SUB-GRUP) — tolak pindah ke bulan yang
+  // sudah dipakai foto lain di scope yang sama (syarat perbandingan berantai).
+  const duplicate = await prisma.upload.findFirst({
+    where: {
+      reportId: upload.reportId,
+      sectionId: upload.sectionId,
+      subGroupKey: upload.subGroupKey,
+      periodMonth: b.periodMonth,
+      NOT: { id },
+    },
+  });
+  if (duplicate) {
+    return NextResponse.json(
+      {
+        error: `Bulan ${formatMonthID(b.periodMonth)} sudah dipakai foto lain di section ini — satu bulan satu foto.`,
+      },
+      { status: 400 }
+    );
+  }
+
+  const updated = await prisma.upload.update({
+    where: { id },
+    data: { periodMonth: b.periodMonth },
   });
 
   return NextResponse.json({
-    upload: {
-      id: updated.id,
-      periodMonth: updated.periodMonth,
-      isPrimaryPeriod: updated.isPrimaryPeriod,
-    },
+    upload: { id: updated.id, periodMonth: updated.periodMonth },
   });
 }
 
