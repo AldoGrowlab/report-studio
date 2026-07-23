@@ -388,7 +388,14 @@ referensi metrik turunan (Fase 2) — ref menunjuk kunci yang sama persis.
 - **Gabung Foto hanya menerima potongan dari SUB-GRUP YANG SAMA.** Tab tiap potongan dibaca
   lalu campuran ditolak: menggabung Flash Sale dengan Voucher menghasilkan satu foto yang
   angkanya milik dua tool, dan ekstraksi ber-scope tidak punya cara memisahkannya lagi.
-  Hasil gabungan **mewarisi** label sub-grup sumbernya.
+  Hasil gabungan **mewarisi** label sub-grup sumbernya. **Dua kasus penolakan dengan pesan
+  TERPISAH** (keduanya hanya setelah deteksi tab tiap foto selesai):
+  - **(a) sebagian foto tak berlabel** (ada foto berlabel, ada yang tidak) → *"N foto belum
+    punya sub-grup — pilih dulu sub-grup"*; foto yang dimaksud **di-highlight** di daftar,
+    bukan disebut namanya di teks. Foto berlabel membuktikan tab memang terbaca, jadi yang
+    kosong patut dicurigai dari tool lain. Kalau **semua** foto tak terbaca tab-nya, ini
+    TIDAK menyala — pilihan sub-grup manual operator yang berlaku (fallback lama utuh).
+  - **(b) label BERBEDA** → pesan campuran yang menyebut tool yang tercampur (tak berubah).
 - **Preset trim di-key per section + sub-grup** (`mergePreset:<sectionId>:<subGroupKey>`):
   potongan Flash Sale dan Voucher berbeda, presetnya tak boleh saling menimpa. Section
   tanpa sub-grup tetap memakai key LAMA persis — preset yang sudah ada di browser operator

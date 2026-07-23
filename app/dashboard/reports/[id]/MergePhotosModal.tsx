@@ -45,6 +45,9 @@ type Item = {
   trim: Trim;
   // Sub-grup hasil baca tab foto ini (Fase 1c). null = tak terbaca/tak cocok.
   detectedSubGroup: string | null;
+  // true selama pembacaan tab foto ini masih berjalan — supaya peringatan "belum punya
+  // sub-grup" tidak berkedip sementara deteksi belum selesai.
+  detectingSub: boolean;
 };
 
 // Preset per section, MURNI di localStorage (tanpa penyimpanan server): supaya potongan
@@ -236,6 +239,9 @@ export default function MergePhotosModal({
       height: 0,
       trim: { ...NO_TRIM },
       detectedSubGroup: null,
+      // Deteksi tab hanya berjalan untuk section ber-sub-grup; selain itu tak ada tab
+      // yang perlu dibaca, jadi jangan pernah tampak "sedang mendeteksi".
+      detectingSub: groupsOf(sectionId).length > 0,
     }));
     const next = [...prev, ...added];
     // Daftar foto berubah -> saran lama tidak lagi berlaku untuk susunan ini.
@@ -275,26 +281,34 @@ export default function MergePhotosModal({
   // tidak punya cara memisahkannya lagi.
   async function detectSubGroupFor(item: Item) {
     const groups = groupsOf(sectionId);
+    // Selesai (apa pun hasilnya) -> matikan penanda "sedang mendeteksi" foto ini, dan isi
+    // sub-grup kalau tab-nya kebaca. Ditulis dalam SATU commit agar tak berkedip.
+    const settle = (matched: string | null) =>
+      commitItems(
+        itemsRef.current.map((p) =>
+          p.localId === item.localId
+            ? { ...p, detectingSub: false, detectedSubGroup: matched ?? p.detectedSubGroup }
+            : p
+        )
+      );
     try {
       const photo = await toAnalysisBase64({ ...item, img: await loadOnce(item.url) });
-      if (!photo) return;
+      if (!photo) return settle(null);
       const res = await fetch("/api/period-detect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ photo }),
       });
-      if (!res.ok) return;
+      if (!res.ok) return settle(null);
       const data = await res.json().catch(() => ({}));
       const matched = matchSubGroup(
         typeof data.tabLabel === "string" ? data.tabLabel : null,
         groups.length > 0 ? groups : sections.flatMap((sec) => sec.subGroups)
       );
-      if (!matched) return;
-      commitItems(
-        itemsRef.current.map((p) => (p.localId === item.localId ? { ...p, detectedSubGroup: matched } : p))
-      );
+      settle(matched);
     } catch {
       /* diam — operator memilih sub-grup manual */
+      settle(null);
     }
   }
 
@@ -307,9 +321,24 @@ export default function MergePhotosModal({
     });
   }
 
-  // Campuran = ada DUA sub-grup berbeda yang terbaca di antara potongan terpilih.
+  // Dua kasus penolakan yang DIPISAH (Jul 2026) — keduanya hanya berlaku di section
+  // ber-sub-grup dan hanya dievaluasi setelah deteksi tab tiap foto selesai:
+  //
+  // (a) SEBAGIAN foto punya label tab, sebagian TIDAK → foto tanpa label itu "belum punya
+  //     sub-grup". Foto berlabel membuktikan tab memang terbaca, jadi yang kosong patut
+  //     dicurigai dari tool lain — di-highlight, bukan disebut di teks.
+  // (b) foto berlabel sub-grup BERBEDA → campuran (pesan lama, tak berubah).
   const detectedGroups = [...new Set(items.map((i) => i.detectedSubGroup).filter(Boolean))] as string[];
   const mixed = detectedGroups.length > 1;
+
+  const anyDetecting = items.some((i) => i.detectingSub);
+  // Foto yang label tab-nya kosong padahal ADA foto lain yang berlabel (partial).
+  const unlabeledIds = new Set(
+    detectedGroups.length >= 1 && !anyDetecting && !mixed
+      ? items.filter((i) => i.img && !i.detectedSubGroup).map((i) => i.localId)
+      : []
+  );
+  const unlabeledCount = unlabeledIds.size;
 
   const loaded = items.length > 0 && items.every((it) => it.img !== null);
 
@@ -503,6 +532,10 @@ export default function MergePhotosModal({
       );
       return;
     }
+    if (unlabeledCount > 0) {
+      setSaveError(`${unlabeledCount} foto belum punya sub-grup — pilih dulu sub-grup.`);
+      return;
+    }
     setSaving(true);
     setSaveError("");
     try {
@@ -679,6 +712,7 @@ export default function MergePhotosModal({
                 onMove={move}
                 onRemove={removeItem}
                 onTrim={setTrim}
+                flagged={unlabeledIds.has(it.localId)}
               />
             ))}
           </div>
@@ -713,6 +747,12 @@ export default function MergePhotosModal({
             satu tool saja.
           </p>
         )}
+        {!mixed && unlabeledCount > 0 && (
+          <p className="mt-3 rounded-[10px] border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-warn">
+            {unlabeledCount} foto belum punya sub-grup — pilih dulu sub-grup. Foto yang
+            ditandai belum bisa dipastikan toolnya; ekstraksi ber-scope tak boleh menebak.
+          </p>
+        )}
         {mixError && <p className="mt-2 text-xs text-danger">{mixError}</p>}
         {saveError && <p className="mt-3 text-xs text-danger">{saveError}</p>}
 
@@ -722,7 +762,7 @@ export default function MergePhotosModal({
           </button>
           <button
             onClick={saveMerged}
-            disabled={!previewReady || saving || !sectionId || mixed}
+            disabled={!previewReady || saving || !sectionId || mixed || unlabeledCount > 0}
             className="btn-primary px-3 py-1.5 text-xs"
           >
             {saving ? "Menyusun…" : "Gabungkan & tambahkan"}
@@ -742,6 +782,7 @@ function TrimCard({
   onMove,
   onRemove,
   onTrim,
+  flagged,
 }: {
   item: Item;
   index: number;
@@ -749,6 +790,8 @@ function TrimCard({
   onMove: (index: number, delta: number) => void;
   onRemove: (localId: string) => void;
   onTrim: (localId: string, side: keyof Trim, value: number) => void;
+  // Fase (Jul 2026) — foto ini "belum punya sub-grup": di-highlight, bukan disebut di teks.
+  flagged: boolean;
 }) {
   const boxRef = useRef<HTMLDivElement | null>(null);
 
@@ -785,10 +828,15 @@ function TrimCard({
   const pct = (v: number) => `${(v * 100).toFixed(2)}%`;
 
   return (
-    <div className="rounded-[10px] border border-line bg-ink p-2">
+    <div
+      className={`rounded-[10px] border bg-ink p-2 ${
+        flagged ? "border-warn ring-1 ring-warn/50" : "border-line"
+      }`}
+    >
       <div className="flex items-center justify-between gap-1">
         <span className="truncate text-[11px] text-fg-2">
           #{index + 1} · {item.file.name}
+          {flagged && <span className="ml-1 text-warn">· belum ada sub-grup</span>}
         </span>
         <div className="flex shrink-0 items-center gap-1">
           <button
