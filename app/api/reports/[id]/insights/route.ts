@@ -99,6 +99,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/reports/[id
       kbAnalysis: section.kbAnalysis,
       sources,
       periodComparison: built.periodComparison,
+      computed: built.computed,
     });
   } catch {
     return NextResponse.json(

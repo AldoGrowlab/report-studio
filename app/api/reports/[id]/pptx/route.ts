@@ -6,6 +6,7 @@ import { getStorage } from "@/lib/storage";
 import { groupBySection } from "@/lib/uploads-view";
 import { formatMonthID } from "@/lib/period";
 import { isDarkColor } from "@/lib/theme";
+import { formatPercentID, OVERLAP_NOTE } from "@/lib/derived";
 import sharp from "sharp";
 import {
   buildReportPptx,
@@ -53,6 +54,19 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/reports/[id
   const insightBySection = new Map(
     report.insights.map((i) => [i.sectionId, { points: i.points, numbers: i.numbers }])
   );
+
+  // Metrik turunan yang siap dikutip. Filter status "ok" ADA DI QUERY: baris
+  // `menunggu`/`penyebut_nol`/`ambigu` tak pernah sampai ke deck klien.
+  const computedRows = await prisma.computedMetric.findMany({
+    where: { reportId, status: "ok", value: { not: null } },
+    orderBy: { key: "asc" },
+  });
+  const computedBySection = new Map<string, { label: string; valueText: string }[]>();
+  for (const c of computedRows) {
+    const list = computedBySection.get(c.sectionId) ?? [];
+    list.push({ label: c.label, valueText: formatPercentID(c.value as number) });
+    computedBySection.set(c.sectionId, list);
+  }
   const storage = getStorage();
 
   // Blok per platform, urutan TETAP Shopee lalu TikTok (DESIGN §Platform).
@@ -127,9 +141,30 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/reports/[id
           periodLabel: u.periodMonth ? formatMonthID(u.periodMonth) : null,
         });
       }
+      // Fase 2c — baris KONTRIBUSI ditambahkan DETERMINISTIK di sini, bukan digantungkan
+      // pada apakah Analyst kebetulan menyebutnya. Hanya status "ok" yang dibaca; baris
+      // `menunggu`/`penyebut_nol`/`ambigu` tak punya nilai dan tak pernah tercetak.
+      // Catatan tumpang-tindih menyertai begitu ada lebih dari satu kontribusi.
+      const contributions = computedBySection.get(g.sectionId) ?? [];
+      const baseInsight = insightBySection.get(g.sectionId) ?? null;
+      const withContrib =
+        contributions.length === 0
+          ? baseInsight
+          : {
+              points: [
+                ...(baseInsight?.points ?? []),
+                ...contributions.map((c) => `${c.label}: ${c.valueText}`),
+                ...(contributions.length > 1 ? [OVERLAP_NOTE] : []),
+              ],
+              numbers: [
+                ...(baseInsight?.numbers ?? []),
+                ...contributions.map((c) => c.valueText),
+              ],
+            };
+
       sections.push({
         name: g.items[0].section.name,
-        insight: insightBySection.get(g.sectionId) ?? null,
+        insight: withContrib,
         photos,
         multiSource: g.multiSource,
         missingPhotos,

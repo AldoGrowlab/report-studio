@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { abbreviateNumberID, type AnalystSource } from "@/lib/analyst";
 import { displayMetricName, scopedMetricKey } from "@/lib/subgroups";
+import { formatPercentID } from "@/lib/derived";
 import {
   computeChainedChanges,
   formatMonthID,
@@ -20,12 +21,17 @@ export type PeriodComparisonData = {
   changes: PeriodChange[]; // perubahan berantai antar bulan berdekatan, dihitung kode
 };
 
+// Metrik TURUNAN yang sudah dihitung kode (Fase 2). HANYA status "ok" yang dimuat —
+// baris `menunggu`/`penyebut_nol`/`ambigu` tak punya nilai dan tak boleh pernah dikutip.
+export type ComputedFact = { label: string; valueText: string };
+
 export type SourcesResult =
   | {
       ok: true;
       sources: AnalystSource[];
       numbers: string[];
       periodComparison: PeriodComparisonData | null; // null = section biasa
+      computed: ComputedFact[];
     }
   | { ok: false; error: string };
 
@@ -185,5 +191,18 @@ export async function buildAnalystSources(
     };
   }
 
-  return { ok: true, sources, numbers, periodComparison };
+  // Metrik turunan section ini: fakta jadi yang tinggal DIKUTIP Analyst.
+  // Filter status "ok" ada DI QUERY, bukan sesudahnya — supaya tak ada jalan bagi nilai
+  // non-ok untuk menyelinap ke paket fakta lewat perubahan kode di kemudian hari.
+  const computedRows = await prisma.computedMetric.findMany({
+    where: { reportId, sectionId, status: "ok", value: { not: null } },
+    orderBy: { key: "asc" },
+  });
+  const computed = computedRows.map((c) => ({
+    label: c.label,
+    valueText: formatPercentID(c.value as number),
+  }));
+  numbers.push(...new Set(computed.map((c) => c.valueText)));
+
+  return { ok: true, sources, numbers, periodComparison, computed };
 }

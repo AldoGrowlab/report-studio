@@ -396,6 +396,44 @@ referensi metrik turunan (Fase 2) — ref menunjuk kunci yang sama persis.
 - **Foto menyimpan `subGroupKey` sebagai STRING, bukan FK** — sama seperti `Extraction.key`
   terhadap metrik. Founder menata ulang KB tidak menghapus foto yang sudah ada.
 
+## Metrik Turunan (Fase 2, Jul 2026) — "kode menghitung, AI mengutip"
+
+Nilai yang DIHITUNG KODE dari metrik lain (boleh lintas section), lalu diperlakukan sebagai
+fakta jadi yang tinggal dikutip Analyst. Kelanjutan lurus dari aturan yang sudah berlaku:
+Analyst dilarang aritmetika, dan persen antar periode pun dihitung kode.
+
+- **Formula HANYA A ÷ B × 100.** Sengaja tidak dibangun bahasa formula umum: begitu ada
+  penjumlahan, kurung, dan prioritas operator, KB berubah jadi bahasa pemrograman mini yang
+  salahnya baru ketahuan di angka klien. **Penyebut resmi = GMV** (bukan omzet bersih).
+- **Ref = kunci ber-scope Fase 1** (`platform + section + subGroupKey + metrik`), disimpan
+  **empat kolom eksplisit per operan** — bukan string ber-pemisah, karena nama section boleh
+  memuat `/` dan `—` dan pemisah apa pun jadi bug escaping yang gagal senyap.
+- **Scope platform KETAT** (Prinsip #4): promo Shopee ÷ GMV Shopee, promo TikTok ÷ GMV
+  TikTok. Di editor, platform bahkan tidak bisa dipilih — ia diturunkan dari section pemilik.
+- **FAIL FAST saat simpan KB**: ref yang menunjuk sesuatu yang tak ada ditolak dengan pesan
+  **menyebut ref-nya utuh**. Menyimpannya lalu "menunggu operan" selamanya = kegagalan senyap.
+  Di editor, operan **dipilih dari KB**, bukan diketik — salah eja mustahil sejak input, dan
+  validasi ini jadi lapisan kedua.
+- **Pemilihan operan tidak pernah MENJUMLAH**: section ber-perbandingan-periode memakai foto
+  periode utama; selain itu wajib tepat satu foto. Lebih dari satu = "sumber terpisah" yang
+  tak boleh digabung → status `ambigu`.
+- **Guard**: operan belum ada → `menunggu` + catatan menyebut ref yang kurang (bukan nol,
+  bukan error); penyebut 0/null → `penyebut_nol`; **NaN & Infinity tak pernah bisa tersimpan**.
+  Operan yang tersedia belakangan memunculkan kontribusinya **otomatis** pada hitung-ulang
+  berikutnya. Dihitung ulang setelah ekstraksi DAN setelah tiap koreksi manual, ditulis-ulang
+  total sehingga duplikat mustahil.
+- **Hanya `status === "ok"` yang boleh dikutip.** Filternya ada DI QUERY pada ketiga konsumen
+  (paket fakta Analyst, kesimpulan, PPT) — bukan disaring belakangan — sehingga nilai non-ok
+  tak punya jalan menyelinap lewat perubahan kode di kemudian hari.
+- **Presisi**: nilai penuh tersimpan, yang dikutip bentuk 1 desimal (`13,5%`) — Prinsip #6.
+- **Baris kontribusi di PPT ditambahkan DETERMINISTIK** oleh route, bukan digantungkan pada
+  apakah Analyst kebetulan menyebutnya.
+- **Jumlah kontribusi TIDAK dipaksa/dinormalisasi ke 100%.** Begitu lebih dari satu tampil
+  berdampingan, catatan standar ikut: *"Kontribusi antar tool dapat tumpang-tindih (satu
+  pesanan bisa memakai lebih dari satu promo)."* Validator **dilarang mengoreksi angka**.
+- **Kontribusi TUNGGAL > 100% → flag `turunan` severity tinggi**, memuat nilai kedua operan
+  untuk ditelusuri: hampir selalu berarti operan salah ekstrak (mis. GMV dari kolom lain).
+
 ## Arsitektur Pipeline (4 lapisan tipis + orchestrator)
 
 ```
@@ -574,6 +612,7 @@ fotonya belum ada.
 | Metrik durasi (`hh:mm:ss`, `45 s`, `12 min`, `1h 30min`) | Jalur parsing SENDIRI di Extractor (normalizer singkatan membuang `:` → `01:23:45` jadi 12345). Disimpan detik, dibahasakan "1j 23mnt 45dtk", dibandingkan relatif (%). Lihat §Tipe Metrik Durasi. |
 | Section terdiri dari beberapa tool berfoto terpisah | Sub-grup: metrik ber-scope `platform + section + subGroupKey + nama`, sehingga "Penjualan" di Flash Sale dan di Voucher adalah entitas BERBEDA. Kelengkapan dinilai per sub-grup atas gabungan foto, bukan per foto. Lihat §Sub-grup Section. |
 | Periode di screenshot vs bulan report | Teks periode disalin Extractor (menumpang panggilan yang ada), dipetakan KODE ke bulan. Bulan report kosong → diisi + badge; sudah ada & berbeda → Flag `periode` severity tinggi; parser ragu (lintas bulan / relatif / tanpa tahun) → diam. Edit manual menang permanen. Lihat §Deteksi Bulan Otomatis. |
+| Angka yang perlu dihitung dari metrik lain | Metrik turunan: KODE yang menghitung (A ÷ B × 100), Analyst hanya mengutip. Operan belum siap → `menunggu`, bukan nol. Jumlah kontribusi tak dipaksa 100%. Lihat §Metrik Turunan. |
 | Satu tampilan terpotong jadi beberapa screenshot | Digabung jadi SATU file di CLIENT sebelum diunggah (crop interaktif membuang irisan), lalu lewat alur unggah biasa. TIDAK ada dedup otomatis berbasis konten — screenshot berulang tidak identik piksel. Lihat §Gabung Foto. |
 | Metrik teks (nama produk/affiliator) | Bukan angka: nilainya di `Extraction.rawText`, `value` NULL. Disalin PERSIS, penanda potong di UJUNG dibuang KODE, tak pernah dilengkapi tebakan. Tak pernah dihitung (tanpa persen/pp) dan tak pernah ter-bold. Metrik ber-indeks sama = baris tabel sama. Lihat §Tipe Metrik Teks. |
 | Nama peringkat berganti antar bulan | Analyst wajib membingkainya sebagai PERGANTIAN penghuni peringkat (sebut kedua nama), BUKAN naik/turunnya satu produk yang sama. |
@@ -585,8 +624,8 @@ fotonya belum ada.
 - Dua tingkat keparahan: *info* (narasi janggal, metrik opsional hilang) → tetap render,
   tandai; *tinggi* (menyentuh presisi) → pertimbangkan tahan bagian itu. Yang terbit hari ini:
   `inkonsistensi` (info, escalate Validator), `periode` (tinggi, Deteksi Bulan Otomatis),
-  dan `kelengkapan` (Fase 1c — tinggi bila metrik `required` hilang/ragu, info bila metrik
-  opsional hilang atau sub-grup tak berfoto).
+  `kelengkapan` (Fase 1c — tinggi bila metrik `required` hilang/ragu, info bila metrik
+  opsional hilang atau sub-grup tak berfoto), dan `turunan` (Fase 2c — tinggi, kontribusi >100%).
 - Flag harus visible di ringkasan akhir (bukan terkubur di log).
 - Akumulasi flag = alat perbaikan KB. Sering ke-flag lintas report → KB perlu dipertajam.
   Tiap insight bawa `kb_version` untuk pelacakan.

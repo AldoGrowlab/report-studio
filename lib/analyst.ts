@@ -2,6 +2,7 @@ import type { ExtractionStatus, MetricType, Platform } from "@prisma/client";
 import { formatMonthID, type PeriodChange } from "@/lib/period";
 import { formatDurationID } from "@/lib/duration";
 import { metricIndex } from "@/lib/text-metric";
+import { OVERLAP_NOTE } from "@/lib/derived";
 import {
   flattenPoints,
   SUB_POINT_PREFIX,
@@ -88,12 +89,16 @@ export type AnalystPeriodComparison = {
   changes: PeriodChange[];
 };
 
+// Metrik TURUNAN yang sudah dihitung kode — fakta jadi, tinggal dikutip.
+export type AnalystComputed = { label: string; valueText: string };
+
 export type AnalystInput = {
   sectionName: string;
   platform: Platform;
   kbAnalysis: string;
   sources: AnalystSource[];
   periodComparison?: AnalystPeriodComparison | null; // null/absen = section biasa
+  computed?: AnalystComputed[]; // kosong/absen = tak ada metrik turunan
 };
 
 // Insight berupa poin-poin ringkas & mudah di-scan di slide (keputusan Jul 2026).
@@ -241,6 +246,16 @@ function renderChanges(changes: PeriodChange[]): string {
     .join("\n");
 }
 
+// Blok metrik turunan — hasil hitung KODE, sama kedudukannya dengan blok perubahan
+// antar periode: model MENGUTIP, tidak pernah menghitung.
+function renderComputed(computed: AnalystComputed[]): string {
+  const lines = computed.map((c) => `- ${c.label}: ${c.valueText}`).join("\n");
+  // Catatan tumpang-tindih WAJIB menyertai begitu ada lebih dari satu kontribusi —
+  // jumlahnya memang tidak 100%, dan itu bukan kesalahan yang perlu dijelaskan sebagai
+  // kejanggalan (apalagi "dikoreksi").
+  return computed.length > 1 ? `${lines}\n(${OVERLAP_NOTE})` : lines;
+}
+
 // Aturan sumber/perbandingan untuk prompt (dipakai generate & revisi):
 // - section biasa: aturan multi-sumber lama, TIDAK berubah;
 // - section ber-perbandingan: tiap foto = satu bulan, klaim perubahan HANYA dari blok
@@ -262,6 +277,21 @@ function sourceRule(input: AnalystInput, multiSource: boolean): string {
         `dengan menyebut "Sumber #n"; DILARANG menggabungkan, menjumlahkan, atau membandingkan angka ` +
         `antar sumber sebagai satu kesatuan.\n`
     : `2. Semua angka berasal dari satu sumber (foto).\n`;
+}
+
+// Aturan tambahan khusus metrik TURUNAN. String KOSONG kalau section ini tak punya —
+// prompt section lama tak berubah sedikit pun.
+function computedRule(input: AnalystInput): string {
+  if ((input.computed?.length ?? 0) === 0) return "";
+  return (
+    `3a. Metrik turunan di atas SUDAH dihitung sistem. Kutip PERSIS seperti tertulis; ` +
+    `DILARANG menghitung ulang, menjumlah, merata-rata, atau menurunkan angka baru darinya. ` +
+    ((input.computed?.length ?? 0) > 1
+      ? `Jumlah kontribusi antar tool TIDAK harus 100% dan JANGAN diperlakukan sebagai ` +
+        `kejanggalan: satu pesanan bisa memakai lebih dari satu promo.`
+      : "") +
+    `\n`
+  );
 }
 
 // Aturan tambahan khusus metrik TEKS (nama produk/affiliator). Mengembalikan string
@@ -302,6 +332,10 @@ async function analyzeWithClaude(input: AnalystInput): Promise<string[]> {
       ? `Perubahan antar periode (DIHITUNG SISTEM — kutip persis, jangan hitung ulang):\n` +
         `${renderChanges(input.periodComparison.changes)}\n\n`
       : "") +
+    ((input.computed?.length ?? 0) > 0
+      ? `Metrik turunan (DIHITUNG SISTEM dari metrik lain — kutip persis, jangan hitung ulang):\n` +
+        `${renderComputed(input.computed as AnalystComputed[])}\n\n`
+      : "") +
     `Aturan WAJIB:\n` +
     `1. Pakai HANYA angka yang tertulis di atas, dalam bentuk PERSIS seperti tertulis. ` +
     `DILARANG menghitung apa pun — tanpa penjumlahan, rata-rata, selisih, persentase, rasio, ` +
@@ -311,6 +345,7 @@ async function analyzeWithClaude(input: AnalystInput): Promise<string[]> {
       : ` Perbandingan antar periode/bulan juga DILARANG (belum ada datanya).\n`) +
     sourceRule(input, multiSource) +
     `3. Metrik "tidak tersedia" cukup disebut tidak tersedia — jangan berspekulasi nilainya.\n` +
+    computedRule(input) +
     textRule(input) +
     `4. ${pointsOutputRule("analisanya")} ` +
     `Fokus pada apa yang dikatakan angka menurut kerangka KB.`;
@@ -413,6 +448,10 @@ async function reviseWithClaude(
       ? `Perubahan antar periode (DIHITUNG SISTEM — kutip persis, jangan hitung ulang):\n` +
         `${renderChanges(input.periodComparison.changes)}\n\n`
       : "") +
+    ((input.computed?.length ?? 0) > 0
+      ? `Metrik turunan (DIHITUNG SISTEM dari metrik lain — kutip persis, jangan hitung ulang):\n` +
+        `${renderComputed(input.computed as AnalystComputed[])}\n\n`
+      : "") +
     `Poin insight SEKARANG (yang harus direvisi):\n` +
     `${renderStoredPoints(existingPoints)}\n\n` +
     `Instruksi koreksi dari Validator:\n` +
@@ -428,6 +467,7 @@ async function reviseWithClaude(
       : `\n`) +
     sourceRule(input, multiSource) +
     `3. Metrik "tidak tersedia" cukup disebut tidak tersedia — jangan berspekulasi nilainya.\n` +
+    computedRule(input) +
     textRule(input) +
     `4. ${pointsOutputRule("analisanya")}\n` +
     `5. Poin yang tidak disinggung instruksi koreksi pertahankan maknanya (boleh disesuaikan ` +

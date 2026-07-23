@@ -6,6 +6,7 @@ import { canAccessReport } from "@/lib/reports";
 import { reviseInsight } from "@/lib/analyst";
 import { buildAnalystSources } from "@/lib/insight-source";
 import { checkCompleteness } from "@/lib/completeness";
+import { formatPercentID } from "@/lib/derived";
 import {
   checkConsistency,
   generateConclusion,
@@ -134,6 +135,7 @@ export async function POST(
           kbAnalysis: item.insight.section.kbAnalysis,
           sources: built.sources,
           periodComparison: built.periodComparison,
+          computed: built.computed,
         },
         item.points,
         instructions
@@ -213,6 +215,8 @@ export async function POST(
     },
   });
   await prisma.flag.deleteMany({ where: { reportId, platform, type: "kelengkapan" } });
+
+
   const completenessFlags = [];
   for (const sec of sectionsWithPhotos) {
     const findings = checkCompleteness({
@@ -249,6 +253,33 @@ export async function POST(
     }
   }
 
+  // Fase 2c — kontribusi TUNGGAL di atas 100% hampir selalu berarti salah ekstrak operan
+  // (mis. GMV terbaca dari kolom yang salah). Di-flag PRESISI, bukan "dikoreksi":
+  // Validator tak pernah mengubah angka. Jumlah antar tool TIDAK diperiksa — tumpang-tindih
+  // itu sah dan bukan kejanggalan.
+  await prisma.flag.deleteMany({ where: { reportId, platform, type: "turunan" } });
+  const overLimit = await prisma.computedMetric.findMany({
+    where: { reportId, status: "ok", value: { gt: 100 } },
+  });
+  for (const c of overLimit) {
+    const sec = sectionsWithPhotos.find((x) => x.id === c.sectionId);
+    if (sec && sec.platform !== platform) continue;
+    completenessFlags.push(
+      await prisma.flag.create({
+        data: {
+          reportId,
+          platform,
+          section: sec?.name ?? "?",
+          type: "turunan",
+          severity: "tinggi",
+          note:
+            `${c.label} terhitung ${formatPercentID(c.value as number)} — di atas 100%. ` +
+            `Periksa operannya: ${c.numeratorRefText} = ${c.numeratorValue}, ` +
+            `${c.denominatorRefText} = ${c.denominatorValue}. Kemungkinan salah ekstrak.`,
+        },
+      })
+    );
+  }
   // Flag = keadaan run TERAKHIR: hapus flag inkonsistensi lama (report, platform) ini,
   // tulis yang tersisa sekarang. Severity "info" — inkonsistensi narasi, bukan presisi angka.
   await prisma.flag.deleteMany({
