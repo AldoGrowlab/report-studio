@@ -3,6 +3,9 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { parseSectionBody, computeSectionStatus } from "@/lib/sections";
+import { buildMetricCatalog } from "@/lib/derived-catalog";
+import { validateDerivedMetrics } from "@/lib/derived";
+import { toDerivedRow } from "@/lib/derived-row";
 
 // PUT — edit section + ganti seluruh metrics (hanya founder)
 export async function PUT(request: Request, ctx: RouteContext<"/api/sections/[id]">) {
@@ -24,8 +27,33 @@ export async function PUT(request: Request, ctx: RouteContext<"/api/sections/[id
   if (!parsed.ok) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
-  const { platform, name, narrativeOrder, kbAnalysis, usesPeriodComparison, metrics, subGroups } =
+  const { platform, name, narrativeOrder, kbAnalysis, usesPeriodComparison, metrics, subGroups, derivedMetrics } =
     parsed.data;
+
+  // FAIL FAST (Fase 2): ref yang menunjuk section/sub-grup/metrik yang tidak ada DITOLAK
+  // di sini, dengan pesan menyebut ref-nya. Menyimpannya dulu lalu "menunggu operan"
+  // selamanya adalah kegagalan senyap — persis yang dilarang Prinsip #1.
+  //
+  // Katalog dibangun dari KB TERKINI ditambah metrik section yang sedang disimpan ini,
+  // supaya definisi yang menunjuk metriknya sendiri tetap sah pada simpan pertama.
+  if (derivedMetrics.length > 0) {
+    const catalog = [
+      ...(await buildMetricCatalog()).filter(
+        (e) => !(e.platform === platform && e.section === name)
+      ),
+      ...metrics.map((m) => ({
+        platform,
+        section: name,
+        subGroupKey: m.subGroupKey,
+        metricKey: m.key,
+        isText: m.type === "text",
+      })),
+    ];
+    const errors = validateDerivedMetrics(derivedMetrics, catalog, platform);
+    if (errors.length > 0) {
+      return NextResponse.json({ error: errors.join(" ") }, { status: 400 });
+    }
+  }
 
   const status = computeSectionStatus({
     name,
@@ -50,6 +78,7 @@ export async function PUT(request: Request, ctx: RouteContext<"/api/sections/[id
       // sama persis seperti perlakuan Extraction terhadap metrik yang dihapus.
       await tx.sectionMetric.deleteMany({ where: { sectionId: id } });
       await tx.sectionSubGroup.deleteMany({ where: { sectionId: id } });
+      await tx.derivedMetric.deleteMany({ where: { sectionId: id } });
       if (subGroups.length > 0) {
         await tx.sectionSubGroup.createMany({
           data: subGroups.map((g) => ({ ...g, sectionId: id })),
@@ -60,9 +89,18 @@ export async function PUT(request: Request, ctx: RouteContext<"/api/sections/[id
           data: metrics.map((m) => ({ ...m, sectionId: id })),
         });
       }
+      if (derivedMetrics.length > 0) {
+        await tx.derivedMetric.createMany({
+          data: derivedMetrics.map((d) => ({ ...toDerivedRow(d), sectionId: id })),
+        });
+      }
       return tx.section.findUnique({
         where: { id },
-        include: { metrics: true, subGroups: { orderBy: { order: "asc" } } },
+        include: {
+          metrics: true,
+          subGroups: { orderBy: { order: "asc" } },
+          derived: { orderBy: { order: "asc" } },
+        },
       });
     });
     return NextResponse.json({ section });

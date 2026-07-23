@@ -122,11 +122,21 @@ test("campuran metrik section + sub-grup ditolak (daftar ekstraksi jadi ambigu)"
   assert.match(e, /harus berada di dalam sub-grup/);
 });
 
+// Definisi turunan yang BENTUKNYA lengkap — validasi ref-nya (apakah menunjuk sesuatu
+// yang benar-benar ada) dikerjakan di route, bukan di sini.
+const D = (key: string, subGroupKey = "flash_sale") => ({
+  key,
+  label: `Kontribusi ${key}`,
+  subGroupKey,
+  numeratorRef: { platform: "shopee", section: "Promotion Tools", subGroupKey, metricKey: "Penjualan" },
+  denominatorRef: { platform: "shopee", section: "Kriteria Utama", metricKey: "GMV" },
+});
+
 test("guard Fase 2: nama metrik tak boleh sekaligus ekstraksi & turunan", () => {
   const e = err({
     ...base,
     subGroups: [{ key: "flash_sale", label: "Flash Sale", expectedMetrics: [M("kontribusi")] }],
-    derivedMetrics: [{ key: "kontribusi", subGroupKey: "flash_sale" }],
+    derivedMetrics: [D("kontribusi")],
   });
   assert.match(e, /sekaligus sebagai metrik ekstraksi dan metrik turunan/);
 
@@ -134,22 +144,31 @@ test("guard Fase 2: nama metrik tak boleh sekaligus ekstraksi & turunan", () => 
   const d = ok({
     ...base,
     subGroups: [{ key: "flash_sale", label: "Flash Sale", expectedMetrics: [M("penjualan")] }],
-    derivedMetrics: [{ key: "kontribusi", subGroupKey: "flash_sale" }],
+    derivedMetrics: [D("kontribusi")],
   });
   assert.equal(d.metrics.length, 1);
+  assert.equal(d.derivedMetrics.length, 1);
+  // Ref tanpa subGroupKey dinormalkan ke sentinel.
+  assert.equal(d.derivedMetrics[0].denominatorRef.subGroupKey, DEFAULT_SUB_GROUP_KEY);
+  assert.equal(d.derivedMetrics[0].unit, "percent");
 
   // Metrik turunan dobel ditolak.
   assert.match(
-    err({
-      ...base,
-      metrics: [M("gmv")],
-      derivedMetrics: [{ key: "kontribusi" }, { key: "kontribusi" }],
-    }),
+    err({ ...base, metrics: [M("gmv")], derivedMetrics: [D("kontribusi", "_default"), D("kontribusi", "_default")] }),
     /tidak boleh dobel/
   );
 
+  // Bentuk ref wajib lengkap.
+  assert.match(err({ ...base, metrics: [M("gmv")], derivedMetrics: [{ key: "k", label: "K" }] }), /Pembilang/);
+  assert.match(
+    err({ ...base, metrics: [M("gmv")], derivedMetrics: [{ ...D("k"), numeratorRef: { platform: "shopee", section: "", metricKey: "x" } }] }),
+    /nama section wajib/
+  );
+
   // Tanpa derivedMetrics: nol perubahan perilaku.
-  assert.equal(ok({ ...base, metrics: [M("gmv")] }).metrics.length, 1);
+  const plain = ok({ ...base, metrics: [M("gmv")] });
+  assert.equal(plain.metrics.length, 1);
+  assert.deepEqual(plain.derivedMetrics, []);
 });
 
 test("validasi lama tetap berlaku", () => {

@@ -1,5 +1,6 @@
 import type { Platform, MetricType, SectionStatus } from "@prisma/client";
 import { DEFAULT_SUB_GROUP_KEY, normalizeLabelForMatch } from "@/lib/subgroups";
+import type { DerivedMetricDef, MetricRef } from "@/lib/derived";
 
 // Tipe metrik yang masuk dari request (sebelum disimpan). Fase 1: tiap metrik MEMBAWA
 // sub-grup pemiliknya. Section tanpa sub-grup memakai sentinel "_default" — perilaku lama.
@@ -31,6 +32,9 @@ export type SectionInput = {
   // sehingga route cukup deleteMany + createMany seperti sebelumnya.
   metrics: MetricInput[];
   subGroups: SubGroupInput[];
+  // Fase 2 — metrik turunan. Ref-nya baru bisa DIVALIDASI di route (butuh katalog metrik
+  // seluruh KB, lintas section); di sini hanya bentuknya yang diperiksa.
+  derivedMetrics: DerivedMetricDef[];
 };
 
 const METRIC_TYPES: MetricType[] = [
@@ -117,22 +121,63 @@ function parseMetricList(
   return { ok: true, metrics };
 }
 
-// Kunci metrik turunan (Fase 2) yang dideklarasikan KB. Di 1a BELUM disimpan — yang
-// dijalankan sekarang hanya GUARD-nya: satu nama metrik tidak boleh sekaligus jadi metrik
-// hasil ekstraksi DAN metrik turunan, karena keduanya akan menulis ke identitas yang sama
-// dan yang belakangan menimpa yang duluan tanpa jejak.
-function collectDerivedKeys(raw: unknown): { key: string; subGroupKey: string }[] {
-  if (!Array.isArray(raw)) return [];
-  const out: { key: string; subGroupKey: string }[] = [];
+// Satu ref operan metrik turunan: platform + section + sub-grup + nama metrik.
+function parseRef(raw: unknown, what: string): { ok: true; ref: MetricRef } | { ok: false; error: string } {
+  if (typeof raw !== "object" || raw === null) {
+    return { ok: false, error: `${what} belum diisi.` };
+  }
+  const r = raw as Record<string, unknown>;
+  const platform = r.platform;
+  if (platform !== "shopee" && platform !== "tiktok") {
+    return { ok: false, error: `${what}: platform harus shopee atau tiktok.` };
+  }
+  const section = typeof r.section === "string" ? r.section.trim() : "";
+  if (!section) return { ok: false, error: `${what}: nama section wajib diisi.` };
+  const metricKey = typeof r.metricKey === "string" ? r.metricKey.trim() : "";
+  if (!metricKey) return { ok: false, error: `${what}: nama metrik wajib diisi.` };
+  const sub = typeof r.subGroupKey === "string" ? r.subGroupKey.trim() : "";
+  return {
+    ok: true,
+    ref: { platform, section, subGroupKey: sub === "" ? DEFAULT_SUB_GROUP_KEY : sub, metricKey },
+  };
+}
+
+// Metrik turunan dari body. BENTUKNYA saja yang diperiksa di sini — apakah ref-nya
+// menunjuk sesuatu yang benar-benar ada divalidasi di route (butuh katalog lintas section).
+function parseDerivedMetrics(
+  raw: unknown
+): { ok: true; defs: DerivedMetricDef[] } | { ok: false; error: string } {
+  if (!Array.isArray(raw)) return { ok: true, defs: [] };
+  const defs: DerivedMetricDef[] = [];
   for (const item of raw) {
-    if (typeof item !== "object" || item === null) continue;
+    if (typeof item !== "object" || item === null) {
+      return { ok: false, error: "Format metrik turunan tidak valid." };
+    }
     const d = item as Record<string, unknown>;
     const key = typeof d.key === "string" ? d.key.trim() : "";
-    if (!key) continue;
+    const label = typeof d.label === "string" ? d.label.trim() : "";
+    if (!key && !label) continue; // baris kosong dilewati (pola sama dengan metrik)
+    if (!key) return { ok: false, error: "Setiap metrik turunan wajib punya key." };
+    if (!label) return { ok: false, error: `Metrik turunan "${key}" wajib punya label.` };
+
+    const num = parseRef(d.numeratorRef, `Pembilang metrik turunan "${key}"`);
+    if (!num.ok) return { ok: false, error: num.error };
+    const den = parseRef(d.denominatorRef, `Penyebut metrik turunan "${key}"`);
+    if (!den.ok) return { ok: false, error: den.error };
+
     const sub = typeof d.subGroupKey === "string" ? d.subGroupKey.trim() : "";
-    out.push({ key, subGroupKey: sub === "" ? DEFAULT_SUB_GROUP_KEY : sub });
+    const notes = typeof d.notes === "string" ? d.notes.trim() : "";
+    defs.push({
+      key,
+      label,
+      subGroupKey: sub === "" ? DEFAULT_SUB_GROUP_KEY : sub,
+      numeratorRef: num.ref,
+      denominatorRef: den.ref,
+      unit: "percent",
+      ...(notes ? { notes } : {}),
+    });
   }
-  return out;
+  return { ok: true, defs };
 }
 
 export function parseSectionBody(body: unknown): ParseResult {
@@ -276,9 +321,12 @@ export function parseSectionBody(body: unknown): ParseResult {
     }
   }
 
-  // ---- Guard metrik turunan (Fase 2) ----
-  // Satu nama metrik tidak boleh sekaligus hasil ekstraksi DAN hasil hitungan.
-  const derived = collectDerivedKeys(b.derivedMetrics);
+  // ---- Metrik turunan (Fase 2) ----
+  // Satu nama metrik tidak boleh sekaligus hasil ekstraksi DAN hasil hitungan: keduanya
+  // menulis ke identitas yang sama, dan yang belakangan menimpa yang duluan tanpa jejak.
+  const parsedDerived = parseDerivedMetrics(b.derivedMetrics);
+  if (!parsedDerived.ok) return { ok: false, error: parsedDerived.error };
+  const derived = parsedDerived.defs;
   const extractedScoped = new Set(metrics.map((m) => `${m.subGroupKey}/${m.key}`));
   const seenDerived = new Set<string>();
   for (const d of derived) {
@@ -305,6 +353,7 @@ export function parseSectionBody(body: unknown): ParseResult {
       usesPeriodComparison: Boolean(b.usesPeriodComparison),
       metrics,
       subGroups,
+      derivedMetrics: derived,
     },
   };
 }

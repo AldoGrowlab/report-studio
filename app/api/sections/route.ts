@@ -3,6 +3,9 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { parseSectionBody, computeSectionStatus } from "@/lib/sections";
+import { buildMetricCatalog } from "@/lib/derived-catalog";
+import { validateDerivedMetrics } from "@/lib/derived";
+import { toDerivedRow } from "@/lib/derived-row";
 
 // GET — daftar semua section + metrics (hanya founder)
 export async function GET() {
@@ -12,7 +15,11 @@ export async function GET() {
   }
 
   const sections = await prisma.section.findMany({
-    include: { metrics: true, subGroups: { orderBy: { order: "asc" } } },
+    include: {
+      metrics: true,
+      subGroups: { orderBy: { order: "asc" } },
+      derived: { orderBy: { order: "asc" } },
+    },
     orderBy: [{ platform: "asc" }, { narrativeOrder: "asc" }, { name: "asc" }],
   });
 
@@ -37,8 +44,33 @@ export async function POST(request: Request) {
   if (!parsed.ok) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
-  const { platform, name, narrativeOrder, kbAnalysis, usesPeriodComparison, metrics, subGroups } =
+  const { platform, name, narrativeOrder, kbAnalysis, usesPeriodComparison, metrics, subGroups, derivedMetrics } =
     parsed.data;
+
+  // FAIL FAST (Fase 2): ref yang menunjuk section/sub-grup/metrik yang tidak ada DITOLAK
+  // di sini, dengan pesan menyebut ref-nya. Menyimpannya dulu lalu "menunggu operan"
+  // selamanya adalah kegagalan senyap — persis yang dilarang Prinsip #1.
+  //
+  // Katalog dibangun dari KB TERKINI ditambah metrik section yang sedang disimpan ini,
+  // supaya definisi yang menunjuk metriknya sendiri tetap sah pada simpan pertama.
+  if (derivedMetrics.length > 0) {
+    const catalog = [
+      ...(await buildMetricCatalog()).filter(
+        (e) => !(e.platform === platform && e.section === name)
+      ),
+      ...metrics.map((m) => ({
+        platform,
+        section: name,
+        subGroupKey: m.subGroupKey,
+        metricKey: m.key,
+        isText: m.type === "text",
+      })),
+    ];
+    const errors = validateDerivedMetrics(derivedMetrics, catalog, platform);
+    if (errors.length > 0) {
+      return NextResponse.json({ error: errors.join(" ") }, { status: 400 });
+    }
+  }
 
   const status = computeSectionStatus({
     name,
@@ -57,8 +89,13 @@ export async function POST(request: Request) {
         status,
         metrics: { create: metrics },
         subGroups: { create: subGroups },
+        derived: { create: derivedMetrics.map(toDerivedRow) },
       },
-      include: { metrics: true, subGroups: { orderBy: { order: "asc" } } },
+      include: {
+        metrics: true,
+        subGroups: { orderBy: { order: "asc" } },
+        derived: { orderBy: { order: "asc" } },
+      },
     });
     return NextResponse.json({ section }, { status: 201 });
   } catch (e) {

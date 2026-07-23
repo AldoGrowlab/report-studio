@@ -47,6 +47,7 @@ model Section {
 
   metrics    SectionMetric[]
   subGroups  SectionSubGroup[]
+  derived    DerivedMetric[]
   uploads    Upload[]
   kbVersions KbVersion[]
   insights   Insight[]
@@ -73,6 +74,40 @@ model SectionSubGroup {
   section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
 
   @@unique([sectionId, key])
+}
+
+// Metrik TURUNAN (Fase 2, Jul 2026) — nilai yang DIHITUNG KODE dari metrik lain, lalu
+// diperlakukan sebagai fakta jadi yang tinggal dikutip Analyst ("kode menghitung, AI
+// mengutip"). Formula HANYA pembilang ÷ penyebut × 100; sengaja tidak ada bahasa formula
+// umum, supaya tak ada cara baru untuk salah yang sulit diuji.
+//
+// Ref operan disimpan sebagai EMPAT KOLOM EKSPLISIT, bukan satu string ber-pemisah: nama
+// section boleh memuat "/" dan "—", dan pemisah apa pun akan jadi bug escaping yang baru
+// ketahuan saat ref gagal terpetakan diam-diam.
+model DerivedMetric {
+  id          String   @id @default(cuid())
+  // Section + sub-grup PEMILIK — tempat metrik ini nanti tampil di narasi & PPT.
+  sectionId   String
+  subGroupKey String   @default("_default")
+  key         String
+  label       String
+  unit        String   @default("percent")
+  notes       String?
+  order       Int      @default(0)
+
+  numeratorPlatform    Platform
+  numeratorSection     String
+  numeratorSubGroupKey String  @default("_default")
+  numeratorMetricKey   String
+
+  denominatorPlatform    Platform
+  denominatorSection     String
+  denominatorSubGroupKey String  @default("_default")
+  denominatorMetricKey   String
+
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@unique([sectionId, subGroupKey, key])
 }
 
 enum MetricType {
