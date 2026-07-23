@@ -8,6 +8,7 @@ import { MAX_TEXT_LENGTH } from "@/lib/text-metric";
 import { parsePointLine, splitByNumbers } from "@/lib/insight-format";
 import { monthOptions, formatMonthID } from "@/lib/period";
 import { MAX_UPLOAD_BYTES } from "@/lib/reports";
+import MergePhotosModal from "./MergePhotosModal";
 
 type SectionOption = {
   id: string;
@@ -221,6 +222,31 @@ export default function UploadManager({
       })),
     ]);
     e.target.value = ""; // izinkan pilih file yang sama lagi
+  }
+
+  // Gabung Foto (Jul 2026) — hasil gabungan masuk ke antrean yang SAMA dengan foto biasa,
+  // hanya saja label section-nya sudah terisi dari modal. Bulan & periode utama tetap
+  // dipilih di baris antrean seperti foto tunggal; server tidak tahu bedanya sama sekali.
+  const [mergeOpen, setMergeOpen] = useState(false);
+
+  function onMerged(file: File, sectionId: string) {
+    setPending((prev) => [
+      ...prev,
+      {
+        localId: `p${localCounter++}`,
+        file,
+        previewUrl: URL.createObjectURL(file),
+        sectionId,
+        periodMonth: "",
+        isPrimaryPeriod: false,
+        saving: false,
+        error:
+          file.size > MAX_UPLOAD_BYTES
+            ? `Ukuran ${(file.size / 1024 / 1024).toFixed(1)} MB melebihi batas 10 MB.`
+            : "",
+      },
+    ]);
+    setMergeOpen(false);
   }
 
   function patchPending(localId: string, patch: Partial<PendingItem>) {
@@ -977,22 +1003,43 @@ export default function UploadManager({
             disimpan.
           </p>
         )}
-        <label className="mt-3 inline-block">
-          <span
-            className={`btn-ghost px-4 py-2 ${noActiveSections ? "cursor-not-allowed opacity-45" : "cursor-pointer"}`}
-          >
-            Pilih gambar…
-          </span>
-          <input
-            type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif"
-            multiple
-            onChange={onPickFiles}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <label className="inline-block">
+            <span
+              className={`btn-ghost px-4 py-2 ${noActiveSections ? "cursor-not-allowed opacity-45" : "cursor-pointer"}`}
+            >
+              Pilih gambar…
+            </span>
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              multiple
+              onChange={onPickFiles}
+              disabled={noActiveSections}
+              className="hidden"
+            />
+          </label>
+          {/* Satu tampilan yang terpotong jadi beberapa screenshot: digabung di client
+              dulu, lalu masuk antrean yang sama sebagai SATU foto. */}
+          <button
+            onClick={() => setMergeOpen(true)}
             disabled={noActiveSections}
-            className="hidden"
-          />
-        </label>
+            title="Gabungkan beberapa potongan screenshot jadi satu foto"
+            className="btn-ghost px-4 py-2 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            Gabung foto
+          </button>
+        </div>
       </div>
+
+      {mergeOpen && (
+        <MergePhotosModal
+          sections={sections}
+          multiPlatform={multiPlatform}
+          onClose={() => setMergeOpen(false)}
+          onMerged={onMerged}
+        />
+      )}
 
       {/* (1c) Pengingat: section aktif yang fotonya belum ada (DESIGN §Alur UX) */}
       {!noActiveSections &&

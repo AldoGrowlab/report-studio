@@ -149,6 +149,54 @@ bukan cuma angkanya.
   metrik angka — bentuk body ditentukan TIPE metrik di server, bukan oleh client. Alur
   low-confidence → konfirmasi manual berlaku sama seperti angka.
 
+## Gabung Foto (pra-proses client, Jul 2026)
+
+Satu tampilan seller center sering tidak muat dalam satu screenshot (terpotong ke bawah
+atau ke samping). Operator memilih potongan-potongannya, menggabungkannya jadi **SATU file
+gambar di sisi CLIENT**, lalu mengunggahnya lewat alur yang sudah ada.
+
+- **TANPA perubahan backend.** Endpoint unggah, schema Prisma, alur ekstraksi, dan aturan
+  "section perbandingan periode = satu bulan satu foto" tetap utuh. Server menerima satu
+  file biasa dan tidak tahu file itu hasil gabungan. Hasil gabungan masuk ke ANTREAN unggah
+  yang sama, jadi pemilihan bulan + periode utama berjalan persis seperti foto tunggal.
+- **TIDAK ADA deteksi/pembuangan irisan otomatis berbasis konten gambar.** Sudah dibuktikan
+  dengan foto produksi: dua screenshot berulang dari jendela yang sama **tidak identik
+  piksel** (ukuran jendela beda beberapa px + resampling), sehingga pencocokan piksel gagal
+  SENYAP — dan kegagalan senyap pada bahan angka melanggar Prinsip #1. Irisan dibuang
+  operator lewat **crop interaktif**, dan konfigurasinya disimpan sebagai preset supaya
+  hanya sekali kerja.
+- **Penggabungan deterministik**: crop → skala proporsional → tempel berurutan. Tidak ada
+  AI, tidak ada content-aware apa pun. Vertikal: lebar hasil = lebar TERBESAR pasca-crop,
+  tiap potongan diskalakan ke lebar itu, ditempel dari atas. Horizontal: cerminnya.
+  Geometrinya MURNI di `lib/merge-images.ts` (tanpa DOM/canvas) sehingga bisa diuji penuh;
+  yang menggambar hanya modal client lewat `ctx.drawImage`.
+- **Trim disimpan sebagai FRAKSI 0..1 per sisi, bukan piksel** — supaya preset dari bulan
+  lalu tetap benar walau screenshot bulan ini beda resolusi (potongan 56% pada foto 1844px
+  jatuh proporsional di foto 2304px). Guard: potongan tidak boleh menyisakan < 10% dimensi
+  asli per sumbu.
+- **Arah gabung: default "Vertikal" + toggle satu klik + preview**, bukan tebakan pintar.
+  Auto-deteksi HANYA menyala pada sinyal tegas — satu sumbu mirip antar foto (< 15%) DAN
+  sumbu lainnya beda jauh (> 40%). Alasan: screenshot jendela yang sama hampir selalu
+  berdimensi mirip di KEDUA sumbu, dan dimensi tidak mencerminkan arah scroll konten;
+  menebak dari sinyal lemah berarti operator harus membatalkan tebakan kita tiap kali.
+- **Preview WAJIB.** Kanvas dirender ulang (debounce ~150 ms) tiap file/arah/urutan/trim
+  berubah, dan tombol simpan hanya hidup saat kanvas yang tergambar cocok dengan keadaan
+  sekarang (dibandingkan lewat tanda-tangan) — tidak ada celah menyimpan kanvas basi.
+- **Guard dimensi 8000 px**: kalau sisi terpanjang hasil melebihi itu, SELURUH kanvas
+  diperkecil proporsional (bukan per gambar, supaya baris tabel tetap sejajar) dan preview
+  menandainya "diperkecil otomatis". Selain kasus ini resolusi TIDAK pernah diturunkan —
+  ketajaman file menentukan akurasi ekstraksi vision.
+- **Keluaran**: `canvas.toBlob("image/png")`; hanya kalau melebihi batas unggah, mundur ke
+  `image/jpeg` quality 0.9. Nama file `gabungan_<timestamp>.png|jpg`. Latar kanvas putih
+  (JPEG tak punya alpha).
+- **Preset per section**: `{arah, jumlahFoto, trimPerPosisiFoto}` disimpan di
+  `localStorage` dengan key `mergePreset:<sectionId>` saat hasil gabungan disimpan.
+  Diterapkan otomatis saat modal dibuka lagi untuk section yang sama DAN jumlah foto sama,
+  dengan badge "preset bulan lalu diterapkan — periksa preview" + tombol "Reset preset".
+  MURNI client-side, tidak ada penyimpanan server (preset adalah kenyamanan operator, bukan
+  bahan report — kegagalan `localStorage` di mode privat tidak menggagalkan penggabungan).
+- **Alur unggah foto tunggal tidak berubah sedikit pun.**
+
 ## Arsitektur Pipeline (4 lapisan tipis + orchestrator)
 
 ```
@@ -325,6 +373,7 @@ fotonya belum ada.
 | Penyingkatan angka | Hanya saat dibahasakan (caption/narasi), tak pernah saat disimpan. Aturan k/jt/miliar 1 desimal — lihat Prinsip #6. |
 | Notasi singkatan di screenshot | Extractor menormalkan `raw_text` → nilai PENUH secara deterministik, per-platform (`M`=juta di Shopee, `M`=miliar di TikTok). Lihat §Normalisasi Notasi Singkatan. |
 | Metrik durasi (`hh:mm:ss`, `45 s`, `12 min`, `1h 30min`) | Jalur parsing SENDIRI di Extractor (normalizer singkatan membuang `:` → `01:23:45` jadi 12345). Disimpan detik, dibahasakan "1j 23mnt 45dtk", dibandingkan relatif (%). Lihat §Tipe Metrik Durasi. |
+| Satu tampilan terpotong jadi beberapa screenshot | Digabung jadi SATU file di CLIENT sebelum diunggah (crop interaktif membuang irisan), lalu lewat alur unggah biasa. TIDAK ada dedup otomatis berbasis konten — screenshot berulang tidak identik piksel. Lihat §Gabung Foto. |
 | Metrik teks (nama produk/affiliator) | Bukan angka: nilainya di `Extraction.rawText`, `value` NULL. Disalin PERSIS, penanda potong di UJUNG dibuang KODE, tak pernah dilengkapi tebakan. Tak pernah dihitung (tanpa persen/pp) dan tak pernah ter-bold. Metrik ber-indeks sama = baris tabel sama. Lihat §Tipe Metrik Teks. |
 | Nama peringkat berganti antar bulan | Analyst wajib membingkainya sebagai PERGANTIAN penghuni peringkat (sebut kedua nama), BUKAN naik/turunnya satu produk yang sama. |
 | Section dengan perbandingan periode | Penanda bulan per-FOTO (bukan per-report); SATU foto per bulan (duplikat ditolak server); foto pembanding di-upload ulang tiap bulan, tanpa memori antar-report; Extractor tak menggabung; persen/pp dihitung KODE berantai antar bulan berdekatan (lewati bila data tak lengkap/pembagi 0), Analyst hanya menarasikan. Lihat §Perbandingan Periode. |
