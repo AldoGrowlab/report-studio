@@ -1,11 +1,22 @@
 import type { Platform, MetricType, SectionStatus } from "@prisma/client";
+import { DEFAULT_SUB_GROUP_KEY, normalizeLabelForMatch } from "@/lib/subgroups";
 
-// Tipe metrik yang masuk dari request (sebelum disimpan)
+// Tipe metrik yang masuk dari request (sebelum disimpan). Fase 1: tiap metrik MEMBAWA
+// sub-grup pemiliknya. Section tanpa sub-grup memakai sentinel "_default" — perilaku lama.
 export type MetricInput = {
   key: string;
   label: string;
   type: MetricType;
   required: boolean;
+  subGroupKey: string;
+};
+
+// Sub-grup section (Fase 1) — mis. Flash Sale / Diskon / Voucher pada Promotion Tools.
+export type SubGroupInput = {
+  key: string;
+  label: string;
+  aliases: string[];
+  order: number;
 };
 
 // Tipe payload section yang sudah divalidasi & dinormalisasi
@@ -16,7 +27,10 @@ export type SectionInput = {
   kbAnalysis: string;
   // Tahap 6b — section ini pakai perbandingan periode (opt-in founder).
   usesPeriodComparison: boolean;
+  // DATAR, dengan subGroupKey terstempel — bentuknya persis seperti yang disimpan,
+  // sehingga route cukup deleteMany + createMany seperti sebelumnya.
   metrics: MetricInput[];
+  subGroups: SubGroupInput[];
 };
 
 const METRIC_TYPES: MetricType[] = [
@@ -27,6 +41,11 @@ const METRIC_TYPES: MetricType[] = [
   "duration",
   "text",
 ];
+
+// Kunci sub-grup dipakai di URL/localStorage/ref metrik turunan, jadi bentuknya dikunci
+// ketat sejak awal — jauh lebih murah daripada memperbaiki data yang sudah telanjur.
+const SUB_GROUP_KEY_RE = /^[a-z0-9_]{1,40}$/;
+const MAX_ALIASES = 12;
 
 // Aturan inti: section "active" hanya kalau lengkap
 // (nama terisi + KB terisi + minimal 1 metrik). Selain itu "draft".
@@ -47,6 +66,74 @@ export function computeSectionStatus(input: {
 export type ParseResult =
   | { ok: true; data: SectionInput }
   | { ok: false; error: string };
+
+// Satu daftar metrik (milik satu sub-grup) -> MetricInput[]. Nama metrik unik DI DALAM
+// sub-grup saja: "Penjualan" boleh ada di Flash Sale DAN di Voucher — justru itu tujuannya.
+function parseMetricList(
+  raw: unknown,
+  subGroupKey: string,
+  scopeLabel: string
+): { ok: true; metrics: MetricInput[] } | { ok: false; error: string } {
+  const list = Array.isArray(raw) ? raw : [];
+  const metrics: MetricInput[] = [];
+  const seenKeys = new Set<string>();
+
+  for (const item of list) {
+    if (typeof item !== "object" || item === null) {
+      return { ok: false, error: `Format metrik ${scopeLabel} tidak valid.` };
+    }
+    const m = item as Record<string, unknown>;
+    const key = typeof m.key === "string" ? m.key.trim() : "";
+    const label = typeof m.label === "string" ? m.label.trim() : "";
+
+    // Lewati baris yang benar-benar kosong (key & label kosong)
+    if (!key && !label) continue;
+
+    if (!key) {
+      return { ok: false, error: `Setiap metrik ${scopeLabel} wajib punya key.` };
+    }
+    if (!label) {
+      return { ok: false, error: `Metrik "${key}" ${scopeLabel} wajib punya label.` };
+    }
+    if (seenKeys.has(key)) {
+      return { ok: false, error: `Key metrik "${key}" tidak boleh dobel ${scopeLabel}.` };
+    }
+    seenKeys.add(key);
+
+    const type = m.type;
+    if (!METRIC_TYPES.includes(type as MetricType)) {
+      return { ok: false, error: `Tipe metrik "${key}" ${scopeLabel} tidak valid.` };
+    }
+
+    metrics.push({
+      key,
+      label,
+      type: type as MetricType,
+      required: Boolean(m.required),
+      subGroupKey,
+    });
+  }
+
+  return { ok: true, metrics };
+}
+
+// Kunci metrik turunan (Fase 2) yang dideklarasikan KB. Di 1a BELUM disimpan — yang
+// dijalankan sekarang hanya GUARD-nya: satu nama metrik tidak boleh sekaligus jadi metrik
+// hasil ekstraksi DAN metrik turunan, karena keduanya akan menulis ke identitas yang sama
+// dan yang belakangan menimpa yang duluan tanpa jejak.
+function collectDerivedKeys(raw: unknown): { key: string; subGroupKey: string }[] {
+  if (!Array.isArray(raw)) return [];
+  const out: { key: string; subGroupKey: string }[] = [];
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) continue;
+    const d = item as Record<string, unknown>;
+    const key = typeof d.key === "string" ? d.key.trim() : "";
+    if (!key) continue;
+    const sub = typeof d.subGroupKey === "string" ? d.subGroupKey.trim() : "";
+    out.push({ key, subGroupKey: sub === "" ? DEFAULT_SUB_GROUP_KEY : sub });
+  }
+  return out;
+}
 
 export function parseSectionBody(body: unknown): ParseResult {
   if (typeof body !== "object" || body === null) {
@@ -81,43 +168,131 @@ export function parseSectionBody(body: unknown): ParseResult {
 
   const kbAnalysis = typeof b.kbAnalysis === "string" ? b.kbAnalysis : "";
 
-  const rawMetrics = Array.isArray(b.metrics) ? b.metrics : [];
+  // ---- Sub-grup (Fase 1) ----
+  const rawSubGroups = Array.isArray(b.subGroups) ? b.subGroups : [];
+  const subGroups: SubGroupInput[] = [];
   const metrics: MetricInput[] = [];
-  const seenKeys = new Set<string>();
+  const seenSubKeys = new Set<string>();
+  // Alias & label dikumpulkan LINTAS sub-grup: dua tool yang punya alias sama membuat
+  // pencocokan tab jadi tebakan, dan foto bisa masuk sub-grup yang salah tanpa gejala.
+  const seenMatchTexts = new Map<string, string>();
 
-  for (const raw of rawMetrics) {
-    if (typeof raw !== "object" || raw === null) {
-      return { ok: false, error: "Format metrik tidak valid." };
+  for (const item of rawSubGroups) {
+    if (typeof item !== "object" || item === null) {
+      return { ok: false, error: "Format sub-grup tidak valid." };
     }
-    const m = raw as Record<string, unknown>;
-    const key = typeof m.key === "string" ? m.key.trim() : "";
-    const label = typeof m.label === "string" ? m.label.trim() : "";
+    const g = item as Record<string, unknown>;
+    const key = typeof g.key === "string" ? g.key.trim().toLowerCase() : "";
+    const label = typeof g.label === "string" ? g.label.trim() : "";
 
-    // Lewati baris yang benar-benar kosong (key & label kosong)
+    // Baris sub-grup yang benar-benar kosong dilewati (pola sama dengan baris metrik).
     if (!key && !label) continue;
 
     if (!key) {
-      return { ok: false, error: "Setiap metrik wajib punya key." };
+      return { ok: false, error: `Sub-grup "${label}" wajib punya key.` };
+    }
+    if (!SUB_GROUP_KEY_RE.test(key)) {
+      return {
+        ok: false,
+        error: `Key sub-grup "${key}" hanya boleh huruf kecil, angka, dan garis bawah (maks 40 karakter).`,
+      };
+    }
+    if (key === DEFAULT_SUB_GROUP_KEY) {
+      return {
+        ok: false,
+        error: `Key sub-grup "${DEFAULT_SUB_GROUP_KEY}" dipakai sistem untuk section tanpa sub-grup — pakai key lain.`,
+      };
     }
     if (!label) {
-      return { ok: false, error: `Metrik "${key}" wajib punya label.` };
+      return { ok: false, error: `Sub-grup "${key}" wajib punya label.` };
     }
-    if (seenKeys.has(key)) {
-      return { ok: false, error: `Key metrik "${key}" tidak boleh dobel dalam satu section.` };
+    if (seenSubKeys.has(key)) {
+      return { ok: false, error: `Key sub-grup "${key}" tidak boleh dobel dalam satu section.` };
     }
-    seenKeys.add(key);
+    seenSubKeys.add(key);
 
-    const type = m.type;
-    if (!METRIC_TYPES.includes(type as MetricType)) {
-      return { ok: false, error: `Tipe metrik "${key}" tidak valid.` };
+    const rawAliases = Array.isArray(g.aliases) ? g.aliases : [];
+    if (rawAliases.length > MAX_ALIASES) {
+      return { ok: false, error: `Sub-grup "${key}" maksimal ${MAX_ALIASES} alias.` };
+    }
+    const aliases: string[] = [];
+    for (const a of rawAliases) {
+      if (typeof a !== "string") {
+        return { ok: false, error: `Alias sub-grup "${key}" harus berupa teks.` };
+      }
+      const alias = a.trim();
+      if (alias === "") continue;
+      if (!aliases.some((x) => normalizeLabelForMatch(x) === normalizeLabelForMatch(alias))) {
+        aliases.push(alias);
+      }
     }
 
-    metrics.push({
-      key,
-      label,
-      type: type as MetricType,
-      required: Boolean(m.required),
-    });
+    // Label sendiri ikut jadi teks pencocokan, jadi bentroknya pun harus tertangkap.
+    for (const text of [label, ...aliases]) {
+      const norm = normalizeLabelForMatch(text);
+      if (norm === "") continue;
+      const owner = seenMatchTexts.get(norm);
+      if (owner && owner !== key) {
+        return {
+          ok: false,
+          error: `Teks "${text}" dipakai sub-grup "${owner}" dan "${key}" — pencocokan tab jadi ambigu.`,
+        };
+      }
+      seenMatchTexts.set(norm, key);
+    }
+
+    const parsedMetrics = parseMetricList(g.expectedMetrics, key, `sub-grup "${key}"`);
+    if (!parsedMetrics.ok) return { ok: false, error: parsedMetrics.error };
+    metrics.push(...parsedMetrics.metrics);
+
+    subGroups.push({ key, label, aliases, order: subGroups.length });
+  }
+
+  // ---- Metrik section (tanpa sub-grup) ----
+  const parsedFlat = parseMetricList(b.metrics, DEFAULT_SUB_GROUP_KEY, "section");
+  if (!parsedFlat.ok) return { ok: false, error: parsedFlat.error };
+
+  // Campuran metrik ber-sub-grup dan tanpa sub-grup DITOLAK: saat mengekstrak satu foto,
+  // sistem harus tahu PASTI daftar metrik mana yang berlaku. Kalau keduanya ada, jawabannya
+  // ambigu — dan ambiguitas di jalur angka melanggar Prinsip #1.
+  if (subGroups.length > 0 && parsedFlat.metrics.length > 0) {
+    return {
+      ok: false,
+      error:
+        "Section ini punya sub-grup, jadi semua metrik harus berada di dalam sub-grup. " +
+        "Pindahkan metrik section ke salah satu sub-grup.",
+    };
+  }
+  metrics.push(...parsedFlat.metrics);
+
+  // Sub-grup tanpa satu pun metrik = tidak ada yang bisa diekstrak dari fotonya.
+  const metricCountByGroup = new Map<string, number>();
+  for (const m of metrics) {
+    metricCountByGroup.set(m.subGroupKey, (metricCountByGroup.get(m.subGroupKey) ?? 0) + 1);
+  }
+  for (const g of subGroups) {
+    if ((metricCountByGroup.get(g.key) ?? 0) === 0) {
+      return { ok: false, error: `Sub-grup "${g.label}" belum punya metrik.` };
+    }
+  }
+
+  // ---- Guard metrik turunan (Fase 2) ----
+  // Satu nama metrik tidak boleh sekaligus hasil ekstraksi DAN hasil hitungan.
+  const derived = collectDerivedKeys(b.derivedMetrics);
+  const extractedScoped = new Set(metrics.map((m) => `${m.subGroupKey}/${m.key}`));
+  const seenDerived = new Set<string>();
+  for (const d of derived) {
+    const scoped = `${d.subGroupKey}/${d.key}`;
+    if (extractedScoped.has(scoped)) {
+      return {
+        ok: false,
+        error: `Metrik "${d.key}" terdaftar sekaligus sebagai metrik ekstraksi dan metrik turunan — pilih salah satu.`,
+      };
+    }
+    if (seenDerived.has(scoped)) {
+      return { ok: false, error: `Metrik turunan "${d.key}" tidak boleh dobel.` };
+    }
+    seenDerived.add(scoped);
   }
 
   return {
@@ -129,6 +304,7 @@ export function parseSectionBody(body: unknown): ParseResult {
       kbAnalysis,
       usesPeriodComparison: Boolean(b.usesPeriodComparison),
       metrics,
+      subGroups,
     },
   };
 }

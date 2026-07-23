@@ -36,7 +36,8 @@
       "Bash(python3 -c \"import json;d=json.load\\(open\\('package.json'\\)\\);print\\(json.dumps\\({'scripts':d.get\\('scripts'\\),'devDependencies':d.get\\('devDependencies'\\)},indent=1\\)\\)\")",
       "Bash(python3 -)",
       "Bash(npm test *)",
-      "Bash(echo \"build exit=$?\")"
+      "Bash(echo \"build exit=$?\")",
+      "Bash(git commit *)"
     ]
   }
 }

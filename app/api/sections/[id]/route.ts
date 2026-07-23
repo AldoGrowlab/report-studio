@@ -24,7 +24,7 @@ export async function PUT(request: Request, ctx: RouteContext<"/api/sections/[id
   if (!parsed.ok) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
-  const { platform, name, narrativeOrder, kbAnalysis, usesPeriodComparison, metrics } =
+  const { platform, name, narrativeOrder, kbAnalysis, usesPeriodComparison, metrics, subGroups } =
     parsed.data;
 
   const status = computeSectionStatus({
@@ -45,13 +45,25 @@ export async function PUT(request: Request, ctx: RouteContext<"/api/sections/[id
         where: { id },
         data: { platform, name, narrativeOrder, kbAnalysis, usesPeriodComparison, status },
       });
+      // Metrik & sub-grup diganti TOTAL (pola lama). Upload menyimpan subGroupKey sebagai
+      // string, bukan FK, jadi foto lama tidak ikut terhapus saat founder menata ulang KB —
+      // sama persis seperti perlakuan Extraction terhadap metrik yang dihapus.
       await tx.sectionMetric.deleteMany({ where: { sectionId: id } });
+      await tx.sectionSubGroup.deleteMany({ where: { sectionId: id } });
+      if (subGroups.length > 0) {
+        await tx.sectionSubGroup.createMany({
+          data: subGroups.map((g) => ({ ...g, sectionId: id })),
+        });
+      }
       if (metrics.length > 0) {
         await tx.sectionMetric.createMany({
           data: metrics.map((m) => ({ ...m, sectionId: id })),
         });
       }
-      return tx.section.findUnique({ where: { id }, include: { metrics: true } });
+      return tx.section.findUnique({
+        where: { id },
+        include: { metrics: true, subGroups: { orderBy: { order: "asc" } } },
+      });
     });
     return NextResponse.json({ section });
   } catch (e) {

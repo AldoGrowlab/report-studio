@@ -12,7 +12,7 @@ export async function GET() {
   }
 
   const sections = await prisma.section.findMany({
-    include: { metrics: true },
+    include: { metrics: true, subGroups: { orderBy: { order: "asc" } } },
     orderBy: [{ platform: "asc" }, { narrativeOrder: "asc" }, { name: "asc" }],
   });
 
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
   if (!parsed.ok) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
-  const { platform, name, narrativeOrder, kbAnalysis, usesPeriodComparison, metrics } =
+  const { platform, name, narrativeOrder, kbAnalysis, usesPeriodComparison, metrics, subGroups } =
     parsed.data;
 
   const status = computeSectionStatus({
@@ -56,8 +56,9 @@ export async function POST(request: Request) {
         usesPeriodComparison,
         status,
         metrics: { create: metrics },
+        subGroups: { create: subGroups },
       },
-      include: { metrics: true },
+      include: { metrics: true, subGroups: { orderBy: { order: "asc" } } },
     });
     return NextResponse.json({ section }, { status: 201 });
   } catch (e) {

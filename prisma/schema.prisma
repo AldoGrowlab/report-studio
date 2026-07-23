@@ -46,11 +46,33 @@ model Section {
   updatedAt            DateTime      @updatedAt
 
   metrics    SectionMetric[]
+  subGroups  SectionSubGroup[]
   uploads    Upload[]
   kbVersions KbVersion[]
   insights   Insight[]
 
   @@unique([platform, name])
+}
+
+// Sub-grup section (Fase 1, Jul 2026) — mis. Promotion Tools = Flash Sale / Diskon /
+// Voucher. Tiap sub-grup punya FOTO sendiri dan daftar expected metrics sendiri, sehingga
+// metrik bernama sama ("Penjualan") tersimpan sebagai entitas BERBEDA: kunci ber-scope =
+// platform + section + subGroupKey + nama metrik. Section tanpa baris di sini berperilaku
+// persis seperti sebelumnya (satu sub-grup tunggal implisit, key "_default").
+//
+// aliases = variasi teks tab yang lazim ("Voucher Toko", "Vouchers") untuk mencocokkan
+// hasil baca tab dashboard. Pencocokan EKSAK di kode (lib/subgroups.ts), bukan tebakan.
+model SectionSubGroup {
+  id        String   @id @default(cuid())
+  sectionId String
+  key       String
+  label     String
+  aliases   String[]
+  order     Int      @default(0)
+
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@unique([sectionId, key])
 }
 
 enum MetricType {
@@ -70,6 +92,11 @@ enum MetricType {
 model SectionMetric {
   id        String     @id @default(cuid())
   sectionId String
+  // Sub-grup pemilik metrik ini (Fase 1). "_default" = sub-grup tunggal implisit, yaitu
+  // perilaku lama. Disimpan sebagai KUNCI, bukan FK, supaya (subGroupKey, key) yang
+  // tersimpan PERSIS sama bentuknya dengan kunci ber-scope yang dipakai ref Fase 2 —
+  // tanpa join, dan tanpa dua identitas untuk metrik yang sama.
+  subGroupKey String   @default("_default")
   key       String
   label     String
   type      MetricType @default(number)
@@ -153,6 +180,10 @@ model Upload {
   // pernah otomatis), maks SATU per (report, section) — ditegakkan server.
   periodMonth     String?
   isPrimaryPeriod Boolean  @default(false)
+  // Sub-grup foto ini (Fase 1). NOT NULL dengan sentinel "_default" — BUKAN nullable:
+  // Postgres memperlakukan NULL sebagai saling berbeda di unique constraint, jadi kolom
+  // nullable akan diam-diam mencabut proteksi duplikat section lama. Lihat lib/subgroups.ts.
+  subGroupKey     String   @default("_default")
   // Jul 2026 — Deteksi Bulan Otomatis. Teks periode APA ADANYA yang terlihat di screenshot
   // (disalin model, verbatim; null = tak ada teks periode) + hasil pemetaannya oleh parser
   // DETERMINISTIK lib/period-parser.ts dalam bentuk kanonik "YYYY-MM" (null = tak bisa
@@ -168,10 +199,12 @@ model Upload {
   section     Section      @relation(fields: [sectionId], references: [id])
   extractions Extraction[]
 
-  // Audit M7: satu bulan = satu foto per (report, section). periodMonth NULL (section
-  // non-perbandingan) TIDAK bertabrakan — Postgres perlakukan NULL sebagai distinct,
-  // jadi ">1 foto = sumber terpisah" tetap boleh. Menegakkan aturan di level DB (race-safe).
-  @@unique([reportId, sectionId, periodMonth])
+  // Audit M7 + Fase 1: satu bulan = satu foto per (report, section, SUB-GRUP). Flash Sale
+  // Juni dan Voucher Juni di section yang sama adalah dua foto SAH — tanpa subGroupKey di
+  // sini, yang kedua ditolak database. periodMonth NULL (section non-perbandingan) TIDAK
+  // bertabrakan — Postgres perlakukan NULL sebagai distinct, jadi ">1 foto = sumber
+  // terpisah" tetap boleh. Menegakkan aturan di level DB (race-safe).
+  @@unique([reportId, sectionId, subGroupKey, periodMonth])
 }
 
 enum ExtractionStatus {

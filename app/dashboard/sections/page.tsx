@@ -13,6 +13,21 @@ type MetricRow = {
   required: boolean;
 };
 
+type SubGroupRow = {
+  key: string;
+  label: string;
+  aliases: string[];
+};
+
+// Sub-grup di FORM: alias diketik sebagai satu baris dipisah koma (jauh lebih enak
+// daripada daftar input terpisah), dipecah saat menyusun payload.
+type GroupForm = {
+  key: string;
+  label: string;
+  aliasesText: string;
+  metrics: MetricRow[];
+};
+
 type SectionRow = {
   id: string;
   platform: Platform;
@@ -21,7 +36,8 @@ type SectionRow = {
   status: "draft" | "active";
   kbAnalysis: string;
   usesPeriodComparison: boolean;
-  metrics: MetricRow[];
+  metrics: (MetricRow & { subGroupKey?: string })[];
+  subGroups?: SubGroupRow[];
 };
 
 const METRIC_TYPES: { value: MetricType; label: string }[] = [
@@ -39,6 +55,14 @@ function emptyMetric(): MetricRow {
   return { key: "", label: "", type: "number", required: false };
 }
 
+function emptyGroup(): GroupForm {
+  return { key: "", label: "", aliasesText: "", metrics: [emptyMetric()] };
+}
+
+const filled = (rows: MetricRow[]) => rows.filter((m) => m.key.trim() && m.label.trim());
+const splitAliases = (text: string) =>
+  text.split(",").map((a) => a.trim()).filter((a) => a !== "");
+
 export default function SectionsPage() {
   const router = useRouter();
   const [sections, setSections] = useState<SectionRow[]>([]);
@@ -53,6 +77,9 @@ export default function SectionsPage() {
   // Tahap 6b — section membandingkan performa antar bulan (penanda bulan per-foto saat upload).
   const [usesPeriodComparison, setUsesPeriodComparison] = useState(false);
   const [metrics, setMetrics] = useState<MetricRow[]>([emptyMetric()]);
+  // Sub-grup (Fase 1). KOSONG = section biasa, perilaku persis seperti sebelumnya.
+  // Terisi = seluruh metrik WAJIB berada di dalam sub-grup (server menolak campuran).
+  const [subGroups, setSubGroups] = useState<GroupForm[]>([]);
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -61,10 +88,15 @@ export default function SectionsPage() {
   // yang sebelumnya dibuang sehingga tombol Hapus tampak rusak tanpa penjelasan.
   const [rowError, setRowError] = useState<Record<string, string>>({});
 
-  // Pratinjau status: harus cocok dengan computeSectionStatus di server
-  const filledMetrics = metrics.filter((m) => m.key.trim() && m.label.trim());
+  // Pratinjau status: harus cocok dengan computeSectionStatus di server — dihitung atas
+  // TOTAL metrik, baik yang datar maupun yang berada di dalam sub-grup.
+  const usingSubGroups = subGroups.length > 0;
+  const filledMetrics = filled(metrics);
+  const totalFilledMetrics = usingSubGroups
+    ? subGroups.reduce((n, g) => n + filled(g.metrics).length, 0)
+    : filledMetrics.length;
   const willBeActive =
-    name.trim().length > 0 && kbAnalysis.trim().length > 0 && filledMetrics.length >= 1;
+    name.trim().length > 0 && kbAnalysis.trim().length > 0 && totalFilledMetrics >= 1;
 
   // Refresh dari handler (simpan/hapus) — call site menyetel loading dulu.
   async function loadSections() {
@@ -102,6 +134,7 @@ export default function SectionsPage() {
     setKbAnalysis("");
     setUsesPeriodComparison(false);
     setMetrics([emptyMetric()]);
+    setSubGroups([]);
     setError("");
     setSuccess("");
   }
@@ -113,7 +146,28 @@ export default function SectionsPage() {
     setNarrativeOrder(String(s.narrativeOrder));
     setKbAnalysis(s.kbAnalysis);
     setUsesPeriodComparison(s.usesPeriodComparison);
-    setMetrics(s.metrics.length ? s.metrics.map((m) => ({ ...m })) : [emptyMetric()]);
+    // Metrik dikelompokkan kembali ke sub-grupnya. Section lama (tanpa sub-grup) jatuh ke
+    // daftar datar seperti sebelumnya — metrik yatim (sub-grupnya sudah dihapus founder)
+    // ikut ke sana juga, apa adanya, supaya tidak hilang diam-diam dari layar.
+    const groups = s.subGroups ?? [];
+    if (groups.length > 0) {
+      setSubGroups(
+        groups.map((g) => ({
+          key: g.key,
+          label: g.label,
+          aliasesText: (g.aliases ?? []).join(", "),
+          metrics: (() => {
+            const rows = s.metrics.filter((m) => m.subGroupKey === g.key).map((m) => ({ ...m }));
+            return rows.length ? rows : [emptyMetric()];
+          })(),
+        }))
+      );
+      const orphan = s.metrics.filter((m) => !groups.some((g) => g.key === m.subGroupKey));
+      setMetrics(orphan.length ? orphan.map((m) => ({ ...m })) : [emptyMetric()]);
+    } else {
+      setSubGroups([]);
+      setMetrics(s.metrics.length ? s.metrics.map((m) => ({ ...m })) : [emptyMetric()]);
+    }
     setError("");
     setSuccess("");
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -131,6 +185,48 @@ export default function SectionsPage() {
     setMetrics((prev) => (prev.length === 1 ? prev : prev.filter((_, i) => i !== index)));
   }
 
+  // ---- Sub-grup (Fase 1) ----
+  // Menyalakan sub-grup MEMINDAHKAN metrik datar yang sudah diketik ke sub-grup pertama,
+  // bukan membuangnya; mematikannya mengembalikannya. Server menolak campuran keduanya.
+  function enableSubGroups() {
+    setSubGroups([{ ...emptyGroup(), metrics: filledMetrics.length ? filledMetrics.map((m) => ({ ...m })) : [emptyMetric()] }]);
+    setMetrics([emptyMetric()]);
+  }
+
+  function disableSubGroups() {
+    const back = subGroups.flatMap((g) => filled(g.metrics));
+    setMetrics(back.length ? back.map((m) => ({ ...m })) : [emptyMetric()]);
+    setSubGroups([]);
+  }
+
+  function updateGroup(gi: number, patch: Partial<GroupForm>) {
+    setSubGroups((prev) => prev.map((g, i) => (i === gi ? { ...g, ...patch } : g)));
+  }
+
+  function updateGroupMetric(gi: number, mi: number, patch: Partial<MetricRow>) {
+    setSubGroups((prev) =>
+      prev.map((g, i) =>
+        i === gi ? { ...g, metrics: g.metrics.map((m, j) => (j === mi ? { ...m, ...patch } : m)) } : g
+      )
+    );
+  }
+
+  function addGroupMetric(gi: number) {
+    setSubGroups((prev) =>
+      prev.map((g, i) => (i === gi ? { ...g, metrics: [...g.metrics, emptyMetric()] } : g))
+    );
+  }
+
+  function removeGroupMetric(gi: number, mi: number) {
+    setSubGroups((prev) =>
+      prev.map((g, i) =>
+        i === gi && g.metrics.length > 1
+          ? { ...g, metrics: g.metrics.filter((_, j) => j !== mi) }
+          : g
+      )
+    );
+  }
+
   async function handleSubmit() {
     setError("");
     setSuccess("");
@@ -142,7 +238,18 @@ export default function SectionsPage() {
       narrativeOrder,
       kbAnalysis,
       usesPeriodComparison,
-      metrics: filledMetrics,
+      // Salah satu saja yang dikirim — server menolak campuran metrik section & sub-grup.
+      ...(usingSubGroups
+        ? {
+            metrics: [],
+            subGroups: subGroups.map((g) => ({
+              key: g.key,
+              label: g.label,
+              aliases: splitAliases(g.aliasesText),
+              expectedMetrics: filled(g.metrics),
+            })),
+          }
+        : { metrics: filledMetrics }),
     };
 
     try {
@@ -313,64 +420,112 @@ export default function SectionsPage() {
               <label className="label-sm">
                 Expected metrics
               </label>
-              <button
-                onClick={addMetric}
-                className="text-xs text-accent transition-colors hover:text-accent-hi"
-              >
-                + Tambah metrik
-              </button>
-            </div>
-            <div className="mt-2 space-y-2">
-              {metrics.map((m, i) => (
-                <div
-                  key={i}
-                  className="grid grid-cols-12 items-center gap-2 rounded-[10px] border border-line bg-ink p-2"
-                >
-                  <input
-                    type="text"
-                    value={m.key}
-                    onChange={(e) => updateMetric(i, { key: e.target.value })}
-                    className="input col-span-3 px-2 py-1.5 text-xs"
-                    placeholder="key"
-                  />
-                  <input
-                    type="text"
-                    value={m.label}
-                    onChange={(e) => updateMetric(i, { label: e.target.value })}
-                    className="input col-span-4 px-2 py-1.5 text-xs"
-                    placeholder="Label"
-                  />
-                  <select
-                    value={m.type}
-                    onChange={(e) => updateMetric(i, { type: e.target.value as MetricType })}
-                    className="select col-span-2 px-2 py-1.5 text-xs"
-                  >
-                    {METRIC_TYPES.map((t) => (
-                      <option key={t.value} value={t.value}>
-                        {t.label}
-                      </option>
-                    ))}
-                  </select>
-                  <label className="col-span-2 flex items-center gap-1.5 text-xs text-fg-3">
-                    <input
-                      type="checkbox"
-                      checked={m.required}
-                      onChange={(e) => updateMetric(i, { required: e.target.checked })}
-                      className="accent-[#5E8BFF]"
-                    />
-                    wajib
-                  </label>
+              {usingSubGroups ? (
+                <span className="text-[11px] text-fg-3">
+                  dikelompokkan per sub-grup — metrik bernama sama di sub-grup berbeda
+                  tersimpan terpisah
+                </span>
+              ) : (
+                <div className="flex items-center gap-3">
                   <button
-                    onClick={() => removeMetric(i)}
-                    disabled={metrics.length === 1}
-                    className="col-span-1 text-fg-3 hover:text-danger disabled:opacity-30"
-                    title="Hapus metrik"
+                    onClick={enableSubGroups}
+                    title="Untuk section yang terdiri dari beberapa tool berfoto terpisah (mis. Flash Sale / Diskon / Voucher)"
+                    className="text-xs text-fg-3 underline underline-offset-2 hover:text-fg-2"
                   >
-                    ✕
+                    Pakai sub-grup
+                  </button>
+                  <button
+                    onClick={addMetric}
+                    className="text-xs text-accent transition-colors hover:text-accent-hi"
+                  >
+                    + Tambah metrik
                   </button>
                 </div>
-              ))}
+              )}
             </div>
+            {usingSubGroups ? (
+              // Section ber-sub-grup: tiap tool punya kotaknya sendiri, lengkap dengan
+              // daftar metriknya. "Penjualan" boleh muncul di beberapa kotak — itu justru
+              // tujuannya, dan server menyimpannya sebagai entitas berbeda.
+              <div className="mt-2 space-y-3">
+                {subGroups.map((g, gi) => (
+                  <div key={gi} className="rounded-[10px] border border-line-2 bg-ink p-3">
+                    <div className="grid grid-cols-12 items-center gap-2">
+                      <input
+                        type="text"
+                        value={g.key}
+                        onChange={(e) => updateGroup(gi, { key: e.target.value })}
+                        className="input col-span-3 px-2 py-1.5 text-xs"
+                        placeholder="key (mis. flash_sale)"
+                      />
+                      <input
+                        type="text"
+                        value={g.label}
+                        onChange={(e) => updateGroup(gi, { label: e.target.value })}
+                        className="input col-span-4 px-2 py-1.5 text-xs"
+                        placeholder="Label (mis. Flash Sale)"
+                      />
+                      <input
+                        type="text"
+                        value={g.aliasesText}
+                        onChange={(e) => updateGroup(gi, { aliasesText: e.target.value })}
+                        title="Variasi teks tab di dashboard, dipisah koma — dipakai mencocokkan foto ke sub-grup ini"
+                        className="input col-span-4 px-2 py-1.5 text-xs"
+                        placeholder="alias, dipisah koma"
+                      />
+                      <button
+                        onClick={() => setSubGroups((prev) => prev.filter((_, i) => i !== gi))}
+                        disabled={subGroups.length === 1}
+                        className="col-span-1 text-fg-3 hover:text-danger disabled:opacity-30"
+                        title="Hapus sub-grup"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div className="mt-2 space-y-2 border-l border-line pl-3">
+                      {g.metrics.map((m, mi) => (
+                        <MetricRowFields
+                          key={mi}
+                          metric={m}
+                          onChange={(patch) => updateGroupMetric(gi, mi, patch)}
+                          onRemove={() => removeGroupMetric(gi, mi)}
+                          canRemove={g.metrics.length > 1}
+                        />
+                      ))}
+                      <button
+                        onClick={() => addGroupMetric(gi)}
+                        className="btn-ghost px-2 py-1 text-[11px]"
+                      >
+                        + Tambah metrik
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setSubGroups((prev) => [...prev, emptyGroup()])}
+                    className="btn-ghost px-3 py-1.5 text-xs"
+                  >
+                    + Tambah sub-grup
+                  </button>
+                  <button onClick={disableSubGroups} className="btn-ghost px-3 py-1.5 text-xs">
+                    Matikan sub-grup
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-2 space-y-2">
+                {metrics.map((m, i) => (
+                  <MetricRowFields
+                    key={i}
+                    metric={m}
+                    onChange={(patch) => updateMetric(i, patch)}
+                    onRemove={() => removeMetric(i)}
+                    canRemove={metrics.length > 1}
+                  />
+                ))}
+              </div>
+            )}
           </div>
 
           {error && <p className="mt-3 text-sm text-danger">{error}</p>}
@@ -443,6 +598,21 @@ export default function SectionsPage() {
                           </span>
                         )}
                       </p>
+                      {/* Sub-grup (Fase 1): fotonya terpisah per tool, jadi founder perlu
+                          melihat sekilas section mana yang berperilaku begitu. */}
+                      {(s.subGroups?.length ?? 0) > 0 && (
+                        <p className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-fg-3">
+                          <span>{s.subGroups!.length} sub-grup:</span>
+                          {s.subGroups!.map((g) => (
+                            <span
+                              key={g.key}
+                              className="badge bg-accent/15 px-1.5 text-[10px] text-accent-hi"
+                            >
+                              {g.label}
+                            </span>
+                          ))}
+                        </p>
+                      )}
                     </div>
                     <div className="flex shrink-0 gap-2">
                       <button
@@ -469,6 +639,67 @@ export default function SectionsPage() {
         </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Satu baris metrik. Diekstrak jadi komponen supaya mode datar dan mode sub-grup memakai
+// kendali yang PERSIS sama — bukan dua salinan JSX yang lama-lama menyimpang.
+function MetricRowFields({
+  metric,
+  onChange,
+  onRemove,
+  canRemove,
+}: {
+  metric: MetricRow;
+  onChange: (patch: Partial<MetricRow>) => void;
+  onRemove: () => void;
+  canRemove: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-12 items-center gap-2 rounded-[10px] border border-line bg-ink p-2">
+      <input
+        type="text"
+        value={metric.key}
+        onChange={(e) => onChange({ key: e.target.value })}
+        className="input col-span-3 px-2 py-1.5 text-xs"
+        placeholder="key"
+      />
+      <input
+        type="text"
+        value={metric.label}
+        onChange={(e) => onChange({ label: e.target.value })}
+        className="input col-span-4 px-2 py-1.5 text-xs"
+        placeholder="Label"
+      />
+      <select
+        value={metric.type}
+        onChange={(e) => onChange({ type: e.target.value as MetricType })}
+        className="select col-span-2 px-2 py-1.5 text-xs"
+      >
+        {METRIC_TYPES.map((t) => (
+          <option key={t.value} value={t.value}>
+            {t.label}
+          </option>
+        ))}
+      </select>
+      <label className="col-span-2 flex items-center gap-1.5 text-xs text-fg-3">
+        <input
+          type="checkbox"
+          checked={metric.required}
+          onChange={(e) => onChange({ required: e.target.checked })}
+          className="accent-[#5E8BFF]"
+        />
+        wajib
+      </label>
+      <button
+        onClick={onRemove}
+        disabled={!canRemove}
+        className="col-span-1 text-fg-3 hover:text-danger disabled:opacity-30"
+        title="Hapus metrik"
+      >
+        ✕
+      </button>
     </div>
   );
 }

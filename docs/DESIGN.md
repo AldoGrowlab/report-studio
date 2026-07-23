@@ -319,6 +319,48 @@ kalender; hasilnya **mengisi** label bulan report bila masih kosong, atau menjad
   `Upload.detectedPeriodMonth` (`"YYYY-MM"`, null bila tak bisa dipastikan) — provenance
   deteksi tetap bisa diperiksa, sejalan dengan pola `rawText` pada `Extraction`.
 
+## Sub-grup Section (Fase 1, Jul 2026)
+
+Section seperti **Promotion Tools** terdiri dari beberapa tool (Flash Sale, Diskon,
+Voucher) yang **fotonya terpisah** dan metriknya **bernama sama** ("Penjualan"). Dua
+akibatnya mengubah struktur, bukan sekadar tampilan:
+
+- kelengkapan expected metrics **tidak boleh dinilai per FOTO** — satu foto hanya memuat
+  metrik satu tool — melainkan **per SUB-GRUP atas gabungan foto** section itu;
+- metrik bernama sama **wajib jadi entitas berbeda**, sehingga tabrakan mustahil secara
+  STRUKTUR, bukan dicegah lewat konvensi penamaan.
+
+**Kunci ber-scope: `platform + section + subGroupKey + nama metrik`.** Ini juga fondasi
+referensi metrik turunan (Fase 2) — ref menunjuk kunci yang sama persis.
+
+- **Section tanpa sub-grup = perilaku lama, persis.** Ia memakai satu sub-grup tunggal
+  implisit dengan kunci sentinel `"_default"`.
+- **Sentinel, BUKAN NULL — dan itu keputusan struktural.** `Upload` punya unique
+  `(reportId, sectionId, subGroupKey, periodMonth)` untuk menegakkan "satu bulan satu foto
+  per sub-grup" (tanpa `subGroupKey` di sana, Flash Sale Juni dan Voucher Juni di section
+  yang sama akan ditolak database). Postgres memperlakukan **NULL sebagai saling berbeda**
+  di unique constraint, jadi kolom nullable akan **diam-diam mencabut proteksi duplikat
+  yang selama ini dinikmati section lama**. Sentinel membuat aturannya satu dan sama untuk
+  section lama maupun baru. Alternatif `NULLS NOT DISTINCT` ditolak karena menuntut
+  Postgres ≥15 dan tidak bisa dideklarasikan lewat `@@unique` Prisma 6 — indeksnya harus
+  ditulis tangan, sehingga schema tak lagi menggambarkan database (drift).
+  String ajaibnya dijinakkan di dua tempat: satu konstanta `DEFAULT_SUB_GROUP_KEY` dan
+  validasi KB yang **menolak** sub-grup buatan founder dengan kunci itu.
+- **`aliases`** = variasi teks tab yang lazim ("Voucher Toko", "Vouchers"). Pencocokan
+  teks tab → sub-grup dilakukan **EKSAK di kode** (`lib/subgroups.ts`), case & spasi
+  diabaikan. Pencocokan longgar (awalan/substring) SENGAJA tidak dipakai: "Voucher Gratis
+  Ongkir" adalah tool lain, dan menebaknya sebagai "Voucher" menyimpan angka ke sub-grup
+  yang salah tanpa gejala apa pun.
+- **Alias/label bentrok antar sub-grup DITOLAK saat simpan KB** — kalau dua tool berbagi
+  teks pencocokan, foto bisa masuk sub-grup yang salah dan tak ada cara mendeteksinya.
+- **Campuran metrik section + metrik sub-grup DITOLAK.** Saat mengekstrak satu foto sistem
+  harus tahu PASTI daftar metrik mana yang berlaku; kalau keduanya ada, jawabannya ambigu —
+  dan ambiguitas di jalur angka melanggar Prinsip #1.
+- **Nama lengkap** `"<Label Sub-grup> — <Nama Metrik>"` dipakai Analyst, Validator, dan PPT.
+  Tanpa sub-grup: nama metrik apa adanya.
+- **Foto menyimpan `subGroupKey` sebagai STRING, bukan FK** — sama seperti `Extraction.key`
+  terhadap metrik. Founder menata ulang KB tidak menghapus foto yang sudah ada.
+
 ## Arsitektur Pipeline (4 lapisan tipis + orchestrator)
 
 ```
@@ -486,7 +528,7 @@ fotonya belum ada.
 | Kasus | Keputusan |
 |---|---|
 | Dua+ foto untuk section sama | Berdampingan sebagai sumber terpisah. TIDAK pernah gabung/jumlah/rata-rata otomatis. Analyst narasikan tiap sumber. |
-| Metrik wajib (`required`) hilang | Section tetap dianalisa dengan angka yang ada; kekurangan di-flag. |
+| Metrik wajib (`required`) hilang | Section tetap dianalisa dengan angka yang ada. **BELUM DIIMPLEMENTASIKAN (per Jul 2026): `required` disimpan & bisa dicentang founder, tapi belum ada kode yang memeriksanya — tidak ada flag yang terbit.** Validator kelengkapan dibangun di Fase 1c, langsung per sub-grup. |
 | Angka sama nama lintas section (mis. GMV) | TIDAK direkonsiliasi. Konsistensi dijaga di level narasi saja. |
 | Validator masih tak cocok setelah revisi ke-1 | Escalate + flag ke ringkasan akhir. Render tetap jalan. |
 | User salah pilih section | Label terkunci ke section aktif; mitigasi via konfirmasi label ringan. |
@@ -495,6 +537,7 @@ fotonya belum ada.
 | Penyingkatan angka | Hanya saat dibahasakan (caption/narasi), tak pernah saat disimpan. Aturan k/jt/miliar 1 desimal — lihat Prinsip #6. |
 | Notasi singkatan di screenshot | Extractor menormalkan `raw_text` → nilai PENUH secara deterministik, per-platform (`M`=juta di Shopee, `M`=miliar di TikTok). Lihat §Normalisasi Notasi Singkatan. |
 | Metrik durasi (`hh:mm:ss`, `45 s`, `12 min`, `1h 30min`) | Jalur parsing SENDIRI di Extractor (normalizer singkatan membuang `:` → `01:23:45` jadi 12345). Disimpan detik, dibahasakan "1j 23mnt 45dtk", dibandingkan relatif (%). Lihat §Tipe Metrik Durasi. |
+| Section terdiri dari beberapa tool berfoto terpisah | Sub-grup: metrik ber-scope `platform + section + subGroupKey + nama`, sehingga "Penjualan" di Flash Sale dan di Voucher adalah entitas BERBEDA. Kelengkapan dinilai per sub-grup atas gabungan foto, bukan per foto. Lihat §Sub-grup Section. |
 | Periode di screenshot vs bulan report | Teks periode disalin Extractor (menumpang panggilan yang ada), dipetakan KODE ke bulan. Bulan report kosong → diisi + badge; sudah ada & berbeda → Flag `periode` severity tinggi; parser ragu (lintas bulan / relatif / tanpa tahun) → diam. Edit manual menang permanen. Lihat §Deteksi Bulan Otomatis. |
 | Satu tampilan terpotong jadi beberapa screenshot | Digabung jadi SATU file di CLIENT sebelum diunggah (crop interaktif membuang irisan), lalu lewat alur unggah biasa. TIDAK ada dedup otomatis berbasis konten — screenshot berulang tidak identik piksel. Lihat §Gabung Foto. |
 | Metrik teks (nama produk/affiliator) | Bukan angka: nilainya di `Extraction.rawText`, `value` NULL. Disalin PERSIS, penanda potong di UJUNG dibuang KODE, tak pernah dilengkapi tebakan. Tak pernah dihitung (tanpa persen/pp) dan tak pernah ter-bold. Metrik ber-indeks sama = baris tabel sama. Lihat §Tipe Metrik Teks. |
@@ -505,8 +548,10 @@ fotonya belum ada.
 ## Sistem Flag
 
 - Dua tingkat keparahan: *info* (narasi janggal, metrik opsional hilang) → tetap render,
-  tandai; *tinggi* (metrik `required` low-confidence/missing tak terkonfirmasi) → menyentuh
-  presisi, pertimbangkan tahan bagian itu.
+  tandai; *tinggi* (menyentuh presisi) → pertimbangkan tahan bagian itu. Yang SUDAH terbit
+  hari ini: `inkonsistensi` (info, dari escalate Validator) dan `periode` (tinggi, dari
+  Deteksi Bulan Otomatis). Flag untuk metrik `required` yang hilang/ragu **belum ada** —
+  menyusul di Fase 1c bersama validator kelengkapan per sub-grup.
 - Flag harus visible di ringkasan akhir (bukan terkubur di log).
 - Akumulasi flag = alat perbaikan KB. Sering ke-flag lintas report → KB perlu dipertajam.
   Tiap insight bawa `kb_version` untuk pelacakan.
