@@ -5,6 +5,7 @@ import { getSession } from "@/lib/session";
 import { canAccessReport, reportProgress } from "@/lib/reports";
 import UploadManager from "./UploadManager";
 import DeleteReportButton from "./DeleteReportButton";
+import ReportPeriodField from "./ReportPeriodField";
 
 export default async function ReportDetailPage({
   params,
@@ -122,9 +123,10 @@ export default async function ReportDetailPage({
   }));
 
   const flags = await prisma.flag.findMany({
-    where: { reportId: id, type: "inkonsistensi" },
+    // Jul 2026: flag "periode" (screenshot salah bulan) tampil di panel yang sama.
+    where: { reportId: id, type: { in: ["inkonsistensi", "periode"] } },
     orderBy: { createdAt: "desc" },
-    select: { id: true, platform: true, section: true, note: true, createdAt: true },
+    select: { id: true, platform: true, section: true, note: true, type: true, severity: true, createdAt: true },
   });
   const initialFlags = flags.map((f) => ({
     ...f,
@@ -222,7 +224,11 @@ export default async function ReportDetailPage({
             <h1 className="mt-1.5 text-2xl font-semibold">
               {report.brandName ?? "Tanpa nama brand"}
             </h1>
-            <p className="mt-0.5 text-sm text-fg-3">{report.reportPeriod}</p>
+            <ReportPeriodField
+              reportId={report.id}
+              initialPeriod={report.reportPeriod}
+              initialDetected={report.periodDetected}
+            />
           </div>
           <DeleteReportButton reportId={report.id} />
         </div>

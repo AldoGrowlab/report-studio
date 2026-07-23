@@ -32,7 +32,11 @@
       "Bash(grep -rn -A3 'fetch\\(`\\\\?/api/' app --include=\"*.tsx\")",
       "Bash(grep -oE '/api/[^`\"]*.*method: \"[A-Z]+\"')",
       "Bash(grep -B1 -A1 \"^\\\\S*-\\\\s*}$\")",
-      "Bash(git -C /Users/sandysetyono/Documents/report-studio status --short)"
+      "Bash(git -C /Users/sandysetyono/Documents/report-studio status --short)",
+      "Bash(python3 -c \"import json;d=json.load\\(open\\('package.json'\\)\\);print\\(json.dumps\\({'scripts':d.get\\('scripts'\\),'devDependencies':d.get\\('devDependencies'\\)},indent=1\\)\\)\")",
+      "Bash(python3 -)",
+      "Bash(npm test *)",
+      "Bash(echo \"build exit=$?\")"
     ]
   }
 }

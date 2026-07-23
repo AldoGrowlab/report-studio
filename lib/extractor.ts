@@ -19,6 +19,10 @@ export type ExtractionResult = {
 export type ExtractionOutcome = {
   extractor: "claude" | "stub";
   results: ExtractionResult[];
+  // Deteksi Bulan Otomatis (Jul 2026) — MENUMPANG panggilan ekstraksi ini, tanpa panggilan
+  // API baru. Isinya teks periode APA ADANYA dari gambar; pemetaan ke bulan kalender
+  // dikerjakan kode (lib/period-parser.ts), bukan model.
+  detectedPeriodRaw: string | null;
 };
 
 // Ambang confidence: di bawah ini ditandai low_confidence (perlu konfirmasi user — Tahap 5).
@@ -219,7 +223,7 @@ async function extractWithClaude(
   metrics: ExpectedMetric[],
   image: ImageBytes,
   context: { sectionName: string; platform: Platform }
-): Promise<ExtractionResult[]> {
+): Promise<{ results: ExtractionResult[]; detectedPeriodRaw: string | null }> {
   const client = await anthropicClient();
 
   const base64 = Buffer.from(image.bytes).toString("base64");
@@ -253,7 +257,13 @@ async function extractWithClaude(
     `nama_produk_2 dan penjualan_produk_2 = baris ke-2, dan seterusnya. JANGAN mengurutkan ` +
     `ulang tabel — ikuti urutan yang tampak di gambar. ` +
     `JANGAN menebak: kalau metrik tidak ada di gambar, value=null, raw_text=null, confidence=0. ` +
-    `Jangan menghitung ulang atau membuat angka baru.\n\nMetrik:\n${metricList}`;
+    `Jangan menghitung ulang atau membuat angka baru.\n\n` +
+    `Selain metrik, isi juga detectedPeriod: kalau screenshot menampilkan PERIODE DATA — ` +
+    `rentang tanggal, nama bulan, atau label periode di mana pun pada tampilan — salin ` +
+    `teksnya PERSIS sebagaimana tertulis ke detectedPeriod.rawText (mis. ` +
+    `"01/06/2026 - 30/06/2026", "Juni 2026", "30 hari terakhir"). Kalau tidak ada teks ` +
+    `periode yang terlihat, isi null. JANGAN menebak dan JANGAN menyimpulkan bulannya ` +
+    `sendiri — cukup salin teksnya.\n\nMetrik:\n${metricList}`;
 
   const schema = {
     type: "object",
@@ -273,8 +283,14 @@ async function extractWithClaude(
           required: ["key", "value", "raw_text", "confidence"],
         },
       },
+      detectedPeriod: {
+        type: "object",
+        additionalProperties: false,
+        properties: { rawText: { type: ["string", "null"] } },
+        required: ["rawText"],
+      },
     },
-    required: ["extractions"],
+    required: ["extractions", "detectedPeriod"],
   } as const;
 
   const response = await client.messages.create({
@@ -299,8 +315,18 @@ async function extractWithClaude(
   }
   const parsed = JSON.parse(textBlock.text) as {
     extractions?: { key: string; value: number | null; raw_text: string | null; confidence: number }[];
+    detectedPeriod?: { rawText?: unknown };
   };
-  return buildResults(metrics, parsed.extractions ?? [], context.platform);
+  const rawPeriod = parsed.detectedPeriod?.rawText;
+  return {
+    results: buildResults(metrics, parsed.extractions ?? [], context.platform),
+    // Teks periode disimpan APA ADANYA (dibatasi panjangnya saja) — pemetaan ke bulan
+    // urusan lib/period-parser.ts, bukan model dan bukan di sini.
+    detectedPeriodRaw:
+      typeof rawPeriod === "string" && rawPeriod.trim() !== ""
+        ? rawPeriod.trim().slice(0, 120)
+        : null,
+  };
 }
 
 // ---- Stub dev (tanpa API key) ----
@@ -350,8 +376,9 @@ export async function extractMetrics(
   context: { sectionName: string; platform: Platform }
 ): Promise<ExtractionOutcome> {
   if (llmBackend() === "claude") {
-    const results = await extractWithClaude(metrics, image, context);
-    return { extractor: "claude", results };
+    const { results, detectedPeriodRaw } = await extractWithClaude(metrics, image, context);
+    return { extractor: "claude", results, detectedPeriodRaw };
   }
-  return { extractor: "stub", results: extractWithStub(metrics) };
+  // Stub dev: TIDAK mengarang teks periode — bulan report tak boleh terisi dari data palsu.
+  return { extractor: "stub", results: extractWithStub(metrics), detectedPeriodRaw: null };
 }

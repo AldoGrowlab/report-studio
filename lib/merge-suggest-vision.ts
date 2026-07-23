@@ -12,7 +12,10 @@ import {
 // Dipisah dari lib/merge-suggest.ts yang MURNI supaya modal client bisa memakai kontrak &
 // helper-nya tanpa menyeret sharp/SDK Anthropic ke bundle browser.
 
-const MODEL = "claude-opus-4-8";
+// Pola SAMA dengan PERIOD_DETECT_MODEL: tugasnya membaca tata letak (blok mana yang
+// terulang), bukan angka — jadi default-nya tier hemat. Bisa dinaikkan lewat env tanpa
+// menyentuh kode bila akurasi sarannya kurang.
+const MODEL = process.env.MERGE_SUGGEST_MODEL ?? "claude-haiku-4-5-20251001";
 
 const NO_SUGGESTION: PhotoSuggestion = { trimTop: 0, trimBottom: 0, trimLeft: 0, trimRight: 0 };
 

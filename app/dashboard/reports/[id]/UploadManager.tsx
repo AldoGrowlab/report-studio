@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { missingPhotoSections, groupBySection, formatValueID } from "@/lib/uploads-view";
 import { formatDurationID, parseDurationToSeconds } from "@/lib/duration";
 import { MAX_TEXT_LENGTH } from "@/lib/text-metric";
+import { ANALYSIS_MAX_PX } from "@/lib/merge-suggest";
 import { parsePointLine, splitByNumbers } from "@/lib/insight-format";
 import { monthOptions, formatMonthID } from "@/lib/period";
 import { MAX_UPLOAD_BYTES } from "@/lib/reports";
@@ -94,13 +95,18 @@ type InsightRevisionView = {
   createdAt: string;
 };
 
-// Flag inkonsistensi hasil escalate Validator (Tahap 7b) — severity info, keadaan run
-// terakhir per platform. Dashboard pengumpul lintas-report = Tahap 9.
+// Flag yang WAJIB terlihat di halaman report (bukan terkubur di log):
+// - "inkonsistensi" (Tahap 7b) hasil escalate Validator, severity info;
+// - "periode" (Jul 2026) screenshot yang bulannya berbeda dari bulan report,
+//   severity tinggi — menyentuh presisi angka. Ditulis saat ekstraksi, bukan saat
+//   membuat kesimpulan, jadi umurnya mengikuti ekstraksi terakhir foto itu.
 type FlagView = {
   id: string;
   platform: "shopee" | "tiktok";
   section: string;
   note: string;
+  type: string;
+  severity: "info" | "tinggi";
   createdAt: string;
 };
 
@@ -114,6 +120,12 @@ type PendingItem = {
   isPrimaryPeriod: boolean;
   saving: boolean;
   error: string;
+  // Deteksi Bulan Otomatis (Jul 2026) — jalur pengisi label, jalan saat foto DIPILIH.
+  // periodTouched = operator sudah memilih sendiri; deteksi TIDAK PERNAH menimpanya,
+  // termasuk kalau hasilnya baru datang belakangan.
+  periodDetecting: boolean;
+  periodDetected: boolean;
+  periodTouched: boolean;
 };
 
 // Daftar poin dengan sub-poin SATU tingkat (Fase C — prefix tab di storage) + bold angka
@@ -202,26 +214,99 @@ export default function UploadManager({
 
   function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
-    setPending((prev) => [
-      ...prev,
-      ...files.map((file) => ({
-        localId: `p${localCounter++}`,
-        file,
-        previewUrl: URL.createObjectURL(file),
-        sectionId: "",
-        periodMonth: "",
-        isPrimaryPeriod: false,
-        saving: false,
-        // Ditolak sejak awal, bukan setelah user menunggu unggahan panjang selesai.
-        error:
-          file.size > MAX_UPLOAD_BYTES
-            ? `Ukuran ${(file.size / 1024 / 1024).toFixed(1)} MB melebihi batas 10 MB.`
-            : file.size === 0
-              ? "File kosong."
-              : "",
-      })),
-    ]);
+    const added = files.map((file) => ({
+      localId: `p${localCounter++}`,
+      file,
+      previewUrl: URL.createObjectURL(file),
+      sectionId: "",
+      periodMonth: "",
+      isPrimaryPeriod: false,
+      saving: false,
+      periodDetecting: false,
+      periodDetected: false,
+      periodTouched: false,
+      error:
+        file.size > MAX_UPLOAD_BYTES
+          ? `Ukuran ${(file.size / 1024 / 1024).toFixed(1)} MB melebihi batas 10 MB.`
+          : file.size === 0
+            ? "File kosong."
+            : "",
+    }));
+    setPending((prev) => [...prev, ...added]);
     e.target.value = ""; // izinkan pilih file yang sama lagi
+    // Deteksi periode tiap foto PARALEL — masing-masing mengisi labelnya sendiri.
+    for (const item of added) {
+      if (item.error === "") void detectPeriodFor(item.localId, item.file);
+    }
+  }
+
+  // Kecilkan file jadi base64 untuk analisis (pola sama dengan Auto-potong): yang dibaca
+  // cuma satu label periode, bukan angka — 1200px sudah lebih dari cukup dan payload kecil.
+  async function fileToAnalysisBase64(file: File): Promise<string | null> {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise<HTMLImageElement | null>((resolve) => {
+        const i = new Image();
+        i.onload = () => resolve(i);
+        i.onerror = () => resolve(null);
+        i.src = url;
+      });
+      if (!img) return null;
+      const k = Math.min(1, ANALYSIS_MAX_PX / Math.max(img.naturalWidth, img.naturalHeight));
+      const w = Math.max(1, Math.round(img.naturalWidth * k));
+      const h = Math.max(1, Math.round(img.naturalHeight * k));
+      const c = document.createElement("canvas");
+      c.width = w;
+      c.height = h;
+      const ctx = c.getContext("2d");
+      if (!ctx) return null;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+      return c.toDataURL("image/jpeg", 0.8).split(",")[1] ?? null;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  // Gagal / tak terbaca = DIAM (silent fallback): dropdown tetap "— bulan foto ini —" dan
+  // operator memilih manual. Fitur bantu tidak boleh memunculkan error yang mengganggu.
+  async function detectPeriodFor(localId: string, file: File) {
+    patchPending(localId, { periodDetecting: true });
+    try {
+      const photo = await fileToAnalysisBase64(file);
+      if (!photo) return;
+      const res = await fetch("/api/period-detect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photo }),
+      });
+      if (!res.ok) return;
+      const data = await res.json().catch(() => ({}));
+      const month = typeof data.month === "string" ? data.month : null;
+      if (!month) return;
+      // Pilihan manual MENANG, termasuk kalau operator memilih selagi deteksi berjalan.
+      setPending((prev) =>
+        prev.map((p) =>
+          p.localId === localId && !p.periodTouched && p.periodMonth === ""
+            ? { ...p, periodMonth: month, periodDetected: true }
+            : p
+        )
+      );
+      // Bulan report ikut terisi dari foto pertama yang terdeteksi. Aturan "hanya saat
+      // kosong" ditegakkan SERVER, jadi deteksi paralel tidak saling menimpa.
+      const patched = await fetch(`/api/reports/${reportId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reportPeriod: formatMonthID(month), detected: true }),
+      });
+      const result = await patched.json().catch(() => ({}));
+      if (patched.ok && result.changed) router.refresh();
+    } catch {
+      /* diam — operator memilih bulan manual */
+    } finally {
+      patchPending(localId, { periodDetecting: false });
+    }
   }
 
   // Gabung Foto (Jul 2026) — hasil gabungan masuk ke antrean yang SAMA dengan foto biasa,
@@ -230,16 +315,20 @@ export default function UploadManager({
   const [mergeOpen, setMergeOpen] = useState(false);
 
   function onMerged(file: File, sectionId: string) {
+    const localId = `p${localCounter++}`;
     setPending((prev) => [
       ...prev,
       {
-        localId: `p${localCounter++}`,
+        localId,
         file,
         previewUrl: URL.createObjectURL(file),
         sectionId,
         periodMonth: "",
         isPrimaryPeriod: false,
         saving: false,
+        periodDetecting: false,
+        periodDetected: false,
+        periodTouched: false,
         error:
           file.size > MAX_UPLOAD_BYTES
             ? `Ukuran ${(file.size / 1024 / 1024).toFixed(1)} MB melebihi batas 10 MB.`
@@ -247,6 +336,8 @@ export default function UploadManager({
       },
     ]);
     setMergeOpen(false);
+    // Hasil gabungan juga dideteksi periodenya — sumbernya tetap screenshot asli.
+    if (file.size <= MAX_UPLOAD_BYTES) void detectPeriodFor(localId, file);
   }
 
   function patchPending(localId: string, patch: Partial<PendingItem>) {
@@ -469,6 +560,10 @@ export default function UploadManager({
       );
       // Hasil baru -> kembalikan deteksi foto-kosong ke default untuk upload ini.
       setManualFill((p) => ({ ...p, [uploadId]: false }));
+      // Deteksi Bulan Otomatis (Jul 2026): bulan report bisa baru terisi, atau muncul
+      // flag salah-bulan. Keduanya dirender dari data server — muat ulang supaya
+      // badge periode & panel flag langsung sesuai, tanpa menduplikasi logikanya di sini.
+      if (data.periodMismatch || data.periodDetected) router.refresh();
       const up = saved.find((u) => u.id === uploadId);
       if (up) markStale(up.sectionId, up.platform);
       return "ok";
@@ -1107,7 +1202,14 @@ export default function UploadManager({
                     <select
                       value={item.periodMonth}
                       onChange={(e) =>
-                        patchPending(item.localId, { periodMonth: e.target.value, error: "" })
+                        // Pilihan manual menang PERMANEN: deteksi yang datang belakangan
+                        // tidak akan menimpanya.
+                        patchPending(item.localId, {
+                          periodMonth: e.target.value,
+                          periodTouched: true,
+                          periodDetected: false,
+                          error: "",
+                        })
                       }
                       className="select w-full"
                     >
@@ -1118,6 +1220,17 @@ export default function UploadManager({
                         </option>
                       ))}
                     </select>
+                    {item.periodDetecting && (
+                      <span className="text-[10px] text-fg-3">mendeteksi bulan…</span>
+                    )}
+                    {item.periodDetected && (
+                      <span
+                        title="Diisi otomatis dari teks periode di foto. Ubah kapan saja."
+                        className="badge bg-accent/15 px-2 text-[10px] text-accent-hi"
+                      >
+                        terdeteksi
+                      </span>
+                    )}
                     <label className="flex items-center gap-1.5 text-xs text-fg-2">
                       <input
                         type="checkbox"
@@ -1560,8 +1673,8 @@ export default function UploadManager({
         )}
       </div>
 
-      {/* Flag inkonsistensi (Tahap 7b) — hasil escalate Validator, WAJIB terlihat
-          (bukan terkubur di log). Keadaan run "Buat kesimpulan" terakhir per platform. */}
+      {/* Flag — hasil escalate Validator (Tahap 7b) DAN peringatan salah-bulan dari
+          Deteksi Bulan Otomatis (Jul 2026). WAJIB terlihat, bukan terkubur di log. */}
       {flags.length > 0 && (
         <div className="mt-8 rounded-[14px] border border-warn/30 bg-warn/5 p-4">
           <h3 className="text-sm font-medium text-warn">
@@ -1570,8 +1683,15 @@ export default function UploadManager({
           <ul className="mt-2 space-y-2">
             {flags.map((f) => (
               <li key={f.id} className="text-xs text-fg-2">
-                <span className="font-medium text-warn">
+                <span
+                  className={`font-medium ${f.severity === "tinggi" ? "text-danger" : "text-warn"}`}
+                >
                   ⚠ [{f.platform === "shopee" ? "Shopee" : "TikTok"}] {f.section}
+                  {f.type === "periode" && (
+                    <span className="ml-1.5 badge bg-danger/15 px-1.5 text-[10px] text-danger">
+                      periode
+                    </span>
+                  )}
                 </span>
                 <span className="mt-0.5 block whitespace-pre-line text-fg-3">
                   {f.note}

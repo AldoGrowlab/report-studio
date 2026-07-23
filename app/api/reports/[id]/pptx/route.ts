@@ -204,8 +204,13 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/reports/[id
     }
   }
 
+  // Periode report boleh belum ditentukan (Jul 2026, terisi dari deteksi bulan). Deck
+  // tetap bisa dibuat — Prinsip #3: report selalu jalan sampai selesai, kekurangannya
+  // ditandai, bukan menghentikan proses.
+  const reportPeriodLabel = report.reportPeriod?.trim() || "Periode belum ditentukan";
+
   const buffer = await buildReportPptx(
-    { reportPeriod: report.reportPeriod, brandName: report.brandName, blocks },
+    { reportPeriod: reportPeriodLabel, brandName: report.brandName, blocks },
     theme
   );
 
@@ -218,8 +223,8 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/reports/[id
 
   // Nama file: fallback ASCII + filename* UTF-8 (periode bisa mengandung karakter non-ASCII).
   const baseName = report.brandName
-    ? `Laporan Performa ${report.brandName} ${report.reportPeriod}.pptx`
-    : `Laporan Performa ${report.reportPeriod}.pptx`;
+    ? `Laporan Performa ${report.brandName} ${reportPeriodLabel}.pptx`
+    : `Laporan Performa ${reportPeriodLabel}.pptx`;
   const asciiName = baseName.replace(/[^\x20-\x7E]/g, "_").replace(/"/g, "'");
   return new NextResponse(new Uint8Array(buffer), {
     headers: {

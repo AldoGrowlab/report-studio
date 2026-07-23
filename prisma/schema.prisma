@@ -101,7 +101,12 @@ enum ReportStatus {
 
 model Report {
   id           String       @id @default(cuid())
-  reportPeriod String
+  // Jul 2026 — NULLABLE: report boleh dibuat tanpa periode lalu terisi dari deteksi bulan
+  // di screenshot (lihat docs/DESIGN.md §Deteksi Bulan Otomatis). Label bebas ("Juni 2026").
+  reportPeriod String?
+  // true = reportPeriod diisi otomatis dari foto (badge "terdeteksi dari foto").
+  // Edit manual mengembalikannya ke false PERMANEN — deteksi tak pernah menimpa lagi.
+  periodDetected Boolean    @default(false)
   // Nama brand/toko yang dilaporkan (Jul 2026). Nullable: report lama tak punya.
   brandName    String?
   platforms    Platform[]
@@ -148,6 +153,12 @@ model Upload {
   // pernah otomatis), maks SATU per (report, section) — ditegakkan server.
   periodMonth     String?
   isPrimaryPeriod Boolean  @default(false)
+  // Jul 2026 — Deteksi Bulan Otomatis. Teks periode APA ADANYA yang terlihat di screenshot
+  // (disalin model, verbatim; null = tak ada teks periode) + hasil pemetaannya oleh parser
+  // DETERMINISTIK lib/period-parser.ts dalam bentuk kanonik "YYYY-MM" (null = tak bisa
+  // dipastikan). Menumpang panggilan ekstraksi yang sudah ada — tanpa panggilan API baru.
+  detectedPeriodRaw   String?
+  detectedPeriodMonth String?
   createdAt       DateTime @default(now())
   // Audit P2 (Jul 2026): jejak waktu perubahan data (tambah/ganti bulan/label) untuk
   // mendeteksi insight yang basi setelah data berubah. Baris lama di-backfill epoch.

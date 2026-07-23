@@ -245,7 +245,7 @@ export async function POST(
   try {
     outcome = await generateConclusion({
       platform,
-      reportPeriod: report.reportPeriod,
+      reportPeriod: report.reportPeriod ?? "(belum ditentukan)",
       kbGeneral: kb?.kbGeneral ?? "",
       kbConclusion: kb?.kbConclusion ?? "",
       sections: working.map((w) => ({ sectionName: w.sectionName, points: w.points })),

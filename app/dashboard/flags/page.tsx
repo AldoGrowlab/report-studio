@@ -119,7 +119,7 @@ export default function FlagsPage() {
                             href={`/dashboard/reports/${f.report.id}`}
                             className="text-xs text-accent transition-colors hover:text-accent-hi"
                           >
-                            Report {f.report.reportPeriod} →
+                            Report {f.report.reportPeriod ?? "tanpa periode"} →
                           </Link>
                           <span className="text-[10px] text-fg-3">
                             {new Date(f.createdAt).toLocaleString("id-ID")}

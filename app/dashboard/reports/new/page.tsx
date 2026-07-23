@@ -128,12 +128,19 @@ export default function NewReportPage() {
               onChange={(e) => setReportPeriod(e.target.value)}
               className="select w-full"
             >
+              {/* Jul 2026 — boleh dikosongkan: bulan terisi sendiri dari teks periode yang
+                  terbaca di screenshot pertama yang diekstrak (lihat DESIGN §Deteksi Bulan). */}
+              <option value="">— deteksi dari foto —</option>
               {periodOptions.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.text}
                 </option>
               ))}
             </select>
+            <p className="mt-1.5 text-xs text-fg-3">
+              Kosongkan untuk mengisi otomatis dari periode yang tertulis di screenshot.
+              Bisa diubah kapan saja di halaman report.
+            </p>
           </div>
 
           {error && <p className="text-sm text-danger">{error}</p>}

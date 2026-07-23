@@ -61,6 +61,8 @@ export default async function ReportsPage({
     // Opsi dropdown periode: nilai unik yang benar-benar ada (murah — hanya satu kolom).
     prisma.report.findMany({
       distinct: ["reportPeriod"],
+      // Report yang periodenya belum ditentukan (NULL) tidak jadi opsi filter.
+      where: { reportPeriod: { not: null } },
       select: { reportPeriod: true },
       orderBy: { createdAt: "desc" },
     }),
@@ -136,7 +138,7 @@ export default async function ReportsPage({
           >
             <option value="">Semua periode</option>
             {periodRows.map((p) => (
-              <option key={p.reportPeriod} value={p.reportPeriod}>
+              <option key={p.reportPeriod as string} value={p.reportPeriod as string}>
                 {p.reportPeriod}
               </option>
             ))}
@@ -221,7 +223,7 @@ export default async function ReportsPage({
                   </div>
                   <p className="mt-2 text-sm font-medium text-fg">
                     {r.brandName ?? "Tanpa nama brand"}
-                    <span className="ml-2 font-normal text-fg-3">· {r.reportPeriod}</span>
+                    <span className="ml-2 font-normal text-fg-3">· {r.reportPeriod ?? "periode belum ditentukan"}</span>
                   </p>
                   <p className="mt-1 text-xs text-fg-3">
                     {r.createdBy.email} ·{" "}

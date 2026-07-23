@@ -212,6 +212,11 @@ arah gabung + fraksi trim per foto ke kontrol yang sudah ada.
   operator bulan lalu lebih tepercaya daripada tebakan baru, dan gratis. Tombolnya tetap
   tersedia untuk re-run manual. Hasil AI yang disimpan operator otomatis menjadi preset
   bulan berikutnya, jadi biayanya sekali per section, bukan tiap bulan.
+- **Model tier hemat, dapat ditimpa env** — `MERGE_SUGGEST_MODEL`, default
+  `claude-haiku-4-5-20251001`. Pola SAMA dengan `PERIOD_DETECT_MODEL` (lihat §Deteksi Bulan
+  Otomatis). Yang dibaca tata letak, bukan angka, jadi tier termurah memadai; naikkan lewat
+  env tanpa menyentuh kode bila akurasi sarannya kurang. Extractor/Analyst/Validator TETAP
+  `claude-opus-4-8` dan tidak pernah ikut diturunkan — merekalah yang menyentuh angka.
 - **Hemat token**: foto dikecilkan ke sisi terpanjang ≤ 1200 px sebelum dianalisis (di
   client DAN lagi di server sebagai jaring pengaman). Yang dianalisis tata letak — mana blok
   yang terulang — bukan angkanya. Fraksi hasilnya berlaku ke resolusi ASLI di client; inilah
@@ -239,6 +244,80 @@ arah gabung + fraksi trim per foto ke kontrol yang sudah ada.
   menyimpan apa pun (karena itu tak ada pemeriksaan kepemilikan report: tak ada report yang
   terlibat). Bagian server-only (sharp + SDK) dipisah ke `lib/merge-suggest-vision.ts`
   supaya modal client bisa memakai kontraknya tanpa menyeret sharp ke bundle browser.
+
+## Deteksi Bulan Otomatis (Jul 2026)
+
+Extractor ikut menyalin teks periode yang tampak di screenshot; kode memetakannya ke bulan
+kalender; hasilnya **mengisi** label bulan report bila masih kosong, atau menjadi
+**pemeriksaan** bila bulan report sudah ada.
+
+**DUA JALUR dengan tugas berbeda** (revisi Jul 2026):
+
+| Jalur | Kapan | Model | Tugas |
+|---|---|---|---|
+| `POST /api/period-detect` | saat foto DIPILIH, sebelum/selagi unggah | tier hemat (default `claude-haiku-4-5-20251001`, dapat ditimpa `PERIOD_DETECT_MODEL`) | **pengisi** label "bulan foto ini" per foto, dan bulan report bila masih kosong |
+| `detectedPeriod` pada ekstraksi | saat "Ekstrak angka" | model Extractor (menumpang, **gratis**) | **pembanding** untuk guard salah-bulan Validator |
+
+- **Biaya**: jalur pengisi = satu panggilan vision KECIL per foto yang dipilih (gambar
+  dikecilkan ke ≤1200 px, keluaran satu field pendek), memakai tier termurah. Dipanggil
+  untuk setiap foto tanpa melihat jenis section — saat foto dipilih, section-nya memang
+  belum ditentukan, dan hasilnya tetap berguna untuk mengisi bulan report. Jalur pembanding
+  **tidak menambah panggilan sama sekali**: satu field menumpang respons ekstraksi yang
+  memang sudah diminta.
+- **Prompt jalur pengisi menyaring di sumbernya**: salin PERIODE UTAMA saja; abaikan
+  periode PEMBANDING ("Bandingkan", "vs", rentang kedua setelah rentang utama) dan
+  TIMESTAMP pembaruan ("Diperbarui pada", "Data diperbarui", tanggal tunggal ber-jam).
+  Tidak ada periode utama → null.
+- **Parser menyaring lagi sebagai lapis kedua** (`stripComparisonNoise`): segmen yang
+  memuat penanda pembanding/pembaruan dipangkas tepat di penandanya. Perlu karena teks
+  periode juga datang dari jalur ekstraksi yang prompt-nya lebih umum — tanpa ini
+  `"Jun 01, 2026 - Jun 30, 2026 | Bandingkan May 02, 2026 …"` terbaca lintas bulan → null,
+  padahal periode utamanya jelas.
+- **Pembagian tugas seperti normalisasi notasi & durasi (Prinsip #1):** model HANYA
+  menyalin teks periode APA ADANYA (`"01/06/2026 - 30/06/2026"`, `"Juni 2026"`,
+  `"30 hari terakhir"`) dan dilarang menyimpulkan bulannya sendiri. Pemetaan teks → bulan
+  dikerjakan parser DETERMINISTIK `lib/period-parser.ts` yang teruji penuh.
+- **Parser bersikap KONSERVATIF — ragu berarti diam.** Menghasilkan `null` (tanpa autofill,
+  tanpa peringatan) bila:
+  - rentang tanggal melintasi lebih dari satu bulan kalender (`15/05/2026 - 14/06/2026`),
+    termasuk saat salah satu ujungnya tak bertahun (`28/05 - 30/06/2026`);
+  - label relatif tanpa tanggal eksplisit (`30 hari terakhir`, `minggu ini`, `bulan lalu`);
+  - **tahun tidak terlihat** (`Juni`, `1 - 30 Juni`) — tahun tidak pernah dikarang;
+  - bulan sama tapi tahun berbeda (`Juni 2026 - Juni 2027`).
+  Format yang dikenali: `DD/MM/YYYY` (juga `-` dan `.`) tunggal maupun rentang, nama bulan
+  Indonesia & Inggris beserta singkatannya, gaya Inggris `MMM DD, YYYY - MMM DD, YYYY`
+  (`Jun 01, 2026 - Jun 30, 2026`), `MM/YYYY`, `YYYY-MM`, `YYYY-MM-DD`, dan **`YYYY.MM`**
+  (`Periode Data Per Bulan 2026.06 (GMT+07)` — bentuk nyata Shopee; noise zona waktu di
+  sekitarnya diabaikan). Tanggal eksplisit MENANG atas label relatif yang menyertainya.
+- **Label bulan PER FOTO** terisi dari jalur pengisi begitu foto dipilih, dengan badge
+  "terdeteksi" dan penanda "mendeteksi bulan…" selama menunggu. Beberapa foto dideteksi
+  PARALEL, masing-masing mengisi labelnya sendiri. Gagal atau tak terbaca = **diam**
+  (silent fallback): dropdown tetap "— bulan foto ini —", tanpa pesan error yang
+  mengganggu, operator memilih manual. **Pilihan manual menang permanen** — hasil deteksi
+  yang datang belakangan tidak pernah menimpa nilai yang sudah dipilih.
+- **Autofill bulan report hanya saat kosong, dan edit manual menang PERMANEN.**
+  `Report.reportPeriod` kini nullable; `Report.periodDetected` menandai nilai hasil deteksi
+  (badge "terdeteksi dari foto" di halaman report). Aturan "hanya saat kosong" ditegakkan
+  DI SERVER (`PATCH /api/reports/[id]` dengan `detected: true`), bukan dipercayakan ke
+  client — beberapa foto dideteksi paralel dan yang kedua tak boleh menimpa yang pertama.
+  Menyunting periode manual menyetel `periodDetected=false`, sehingga deteksi berikutnya
+  tidak akan pernah menimpanya lagi.
+- **Guard salah bulan.** Bila bulan report sudah ada dan bulan hasil deteksi BERBEDA,
+  ditulis `Flag` bertipe `periode`, severity **tinggi** (menyentuh presisi: screenshot dari
+  bulan yang salah membuat seluruh angka report salah, bukan sekadar narasi janggal), dengan
+  bunyi: *"Periode pada foto terbaca &lt;rawText&gt; (=&lt;Bulan YYYY&gt;), berbeda dengan bulan
+  report (&lt;Bulan YYYY&gt;). Periksa apakah screenshot salah bulan."* Tampil di panel Flag
+  halaman report yang sudah ada. Perbandingan hanya dilakukan bila KEDUA sisi bisa dipetakan
+  parser — label kustom (`"Q2 2026"`) tidak pernah diprotes.
+- **Umur flag mengikuti ekstraksi, bukan kesimpulan.** Flag `periode` dihapus-lalu-ditulis
+  di tiap ekstraksi foto itu, jadi "Ekstrak ulang" tidak menumpuk peringatan. `deleteMany`
+  milik alur kesimpulan discope ke `type: "inkonsistensi"`, jadi keduanya tidak saling hapus.
+- **Ekstraksi metrik tidak terpengaruh sama sekali**: apa pun hasil deteksi periode, angka
+  tetap diekstrak seperti biasa (Prinsip #3 — report selalu jalan sampai selesai). PPT tanpa
+  periode memakai label "Periode belum ditentukan", tidak gagal.
+- **Jejak per foto** disimpan di `Upload.detectedPeriodRaw` (teks apa adanya) dan
+  `Upload.detectedPeriodMonth` (`"YYYY-MM"`, null bila tak bisa dipastikan) — provenance
+  deteksi tetap bisa diperiksa, sejalan dengan pola `rawText` pada `Extraction`.
 
 ## Arsitektur Pipeline (4 lapisan tipis + orchestrator)
 
@@ -416,6 +495,7 @@ fotonya belum ada.
 | Penyingkatan angka | Hanya saat dibahasakan (caption/narasi), tak pernah saat disimpan. Aturan k/jt/miliar 1 desimal — lihat Prinsip #6. |
 | Notasi singkatan di screenshot | Extractor menormalkan `raw_text` → nilai PENUH secara deterministik, per-platform (`M`=juta di Shopee, `M`=miliar di TikTok). Lihat §Normalisasi Notasi Singkatan. |
 | Metrik durasi (`hh:mm:ss`, `45 s`, `12 min`, `1h 30min`) | Jalur parsing SENDIRI di Extractor (normalizer singkatan membuang `:` → `01:23:45` jadi 12345). Disimpan detik, dibahasakan "1j 23mnt 45dtk", dibandingkan relatif (%). Lihat §Tipe Metrik Durasi. |
+| Periode di screenshot vs bulan report | Teks periode disalin Extractor (menumpang panggilan yang ada), dipetakan KODE ke bulan. Bulan report kosong → diisi + badge; sudah ada & berbeda → Flag `periode` severity tinggi; parser ragu (lintas bulan / relatif / tanpa tahun) → diam. Edit manual menang permanen. Lihat §Deteksi Bulan Otomatis. |
 | Satu tampilan terpotong jadi beberapa screenshot | Digabung jadi SATU file di CLIENT sebelum diunggah (crop interaktif membuang irisan), lalu lewat alur unggah biasa. TIDAK ada dedup otomatis berbasis konten — screenshot berulang tidak identik piksel. Lihat §Gabung Foto. |
 | Metrik teks (nama produk/affiliator) | Bukan angka: nilainya di `Extraction.rawText`, `value` NULL. Disalin PERSIS, penanda potong di UJUNG dibuang KODE, tak pernah dilengkapi tebakan. Tak pernah dihitung (tanpa persen/pp) dan tak pernah ter-bold. Metrik ber-indeks sama = baris tabel sama. Lihat §Tipe Metrik Teks. |
 | Nama peringkat berganti antar bulan | Analyst wajib membingkainya sebagai PERGANTIAN penghuni peringkat (sebut kedua nama), BUKAN naik/turunnya satu produk yang sama. |
@@ -441,6 +521,12 @@ fotonya belum ada.
 - Next.js 16 (App Router, Turbopack) + React 19 + Tailwind v4 + TypeScript, TANPA folder `src`.
 - Prisma 6 + PostgreSQL (Railway). JANGAN naik ke Prisma 7.
 - Auth buatan sendiri: cookie session bertanda tangan HMAC (`rs_session`), BUKAN next-auth.
+- **Model LLM per peran.** Yang menyentuh ANGKA memakai `claude-opus-4-8` dan di-hardcode
+  (Extractor, Analyst, Validator) — presisi tidak boleh diturunkan lewat env tanpa sengaja.
+  Yang hanya membantu tata letak/label memakai tier hemat dengan default aman dan bisa
+  ditimpa env: `MERGE_SUGGEST_MODEL` (Auto-potong Gabung Foto) dan `PERIOD_DETECT_MODEL`
+  (Deteksi Bulan Otomatis), keduanya default `claude-haiku-4-5-20251001`. Keduanya juga
+  yang paling sering dipanggil, jadi di sinilah biaya benar-benar terasa.
 - Pola data: client component + fetch ke route handler (konsisten di seluruh app).
 - Storage gambar: Cloudflare R2 (S3-compatible), bucket private, disajikan via presigned URL
   di balik auth. Abstraksi di `lib/storage.ts` (fallback disk lokal untuk dev). Volume target:

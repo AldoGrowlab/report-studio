@@ -52,13 +52,13 @@ export async function POST(request: Request) {
     );
   }
 
-  if (typeof body.reportPeriod !== "string") {
-    return NextResponse.json({ error: "Periode report wajib diisi." }, { status: 400 });
+  // Jul 2026 — periode OPSIONAL: kosong berarti menunggu Deteksi Bulan Otomatis mengisi
+  // dari teks periode di screenshot (DESIGN §Deteksi Bulan Otomatis). Tetap harus berupa
+  // teks kalau dikirim — `reportPeriod: 123` dulu meledak jadi 500 tanpa pesan.
+  if (body.reportPeriod !== undefined && typeof body.reportPeriod !== "string") {
+    return NextResponse.json({ error: "Periode report harus berupa teks." }, { status: 400 });
   }
-  const reportPeriod = body.reportPeriod.trim();
-  if (!reportPeriod) {
-    return NextResponse.json({ error: "Periode report wajib diisi." }, { status: 400 });
-  }
+  const reportPeriod = (body.reportPeriod ?? "").trim();
   // Periode ikut masuk mentah ke prompt Validator, jadi baris baru ditolak juga.
   // JUJUR TENTANG BATASNYA: ini MEMPERSEMPIT ruang injeksi, bukan menutupnya — kalimat
   // satu baris di bawah 60 karakter masih bisa lewat. Dinilai memadai karena alat ini
@@ -75,7 +75,7 @@ export async function POST(request: Request) {
   const report = await prisma.report.create({
     data: {
       brandName,
-      reportPeriod,
+      reportPeriod: reportPeriod === "" ? null : reportPeriod,
       platforms: platforms as Platform[],
       createdById: session.userId,
     },
