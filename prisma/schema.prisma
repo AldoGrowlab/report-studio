@@ -178,6 +178,7 @@ model Report {
 
   createdBy       User             @relation(fields: [createdById], references: [id])
   uploads         Upload[]
+  computed        ComputedMetric[]
   flags           Flag[]
   insights        Insight[]
   conclusions     Conclusion[]
@@ -200,6 +201,43 @@ model Recommendation {
   report Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
   @@unique([reportId, platform])
+}
+
+// Hasil METRIK TURUNAN untuk satu report (Fase 2b, Jul 2026). Dihitung KODE setelah
+// ekstraksi & sesudah tiap koreksi manual; ditulis-ulang total tiap kali (hapus lalu tulis)
+// sehingga tak pernah ada duplikat maupun sisa nilai basi.
+//
+// `status` menentukan boleh-tidaknya angka ini dikutip:
+//   ok           -> fakta jadi, boleh masuk paket Analyst/PPT;
+//   menunggu     -> operan belum ada; BUKAN error, bukan nol;
+//   penyebut_nol -> penyebut 0/null;
+//   ambigu       -> operan punya >1 foto tanpa penanda periode utama, jadi nilainya
+//                   tak bisa ditentukan tanpa menjumlah (DILARANG — sumber terpisah).
+// Baris non-"ok" TIDAK pernah punya value dan TIDAK pernah dikutip; ia ada supaya
+// catatannya punya rumah dan bisa diaudit.
+model ComputedMetric {
+  id          String   @id @default(cuid())
+  reportId    String
+  sectionId   String
+  subGroupKey String   @default("_default")
+  key         String
+  label       String
+  unit        String   @default("percent")
+  value       Float?
+  status      String
+  note        String?
+  // Provenance untuk audit: nilai kedua operan + ref-nya dalam bentuk teks. Teks ini
+  // HANYA untuk dibaca manusia — penyelesaian ref tetap memakai kolom di DerivedMetric,
+  // jadi tak ada string yang perlu di-parse balik.
+  numeratorValue   Float?
+  denominatorValue Float?
+  numeratorRefText   String
+  denominatorRefText String
+  updatedAt   DateTime @updatedAt
+
+  report Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@unique([reportId, sectionId, subGroupKey, key])
 }
 
 model Upload {

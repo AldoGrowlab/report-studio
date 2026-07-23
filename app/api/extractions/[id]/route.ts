@@ -8,6 +8,7 @@ import {
   parseTextExtractionEdit,
   computeEditedTextFields,
 } from "@/lib/extractions";
+import { recomputeDerivedMetrics } from "@/lib/derived-compute";
 
 // PATCH — konfirmasi/koreksi manual satu hasil ekstraksi (Tahap 5).
 // Body: { value: number | null } untuk metrik ANGKA — rawText & confidence asli tidak
@@ -64,6 +65,14 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/extraction
   }
 
   const updated = await prisma.extraction.update({ where: { id }, data });
+
+  // Koreksi manual mengubah operan -> metrik turunan ikut dihitung ulang (Fase 2b),
+  // supaya kontribusi tak pernah tertinggal di angka lama.
+  try {
+    await recomputeDerivedMetrics(extraction.upload.reportId);
+  } catch {
+    /* diamkan — koreksi manual sudah aman tersimpan */
+  }
 
   return NextResponse.json({ extraction: updated });
 }

@@ -5,6 +5,7 @@ import { canAccessReport } from "@/lib/reports";
 import { getStorage } from "@/lib/storage";
 import { extractMetrics, type ExpectedMetric } from "@/lib/extractor";
 import { isDefaultSubGroup } from "@/lib/subgroups";
+import { recomputeDerivedMetrics } from "@/lib/derived-compute";
 import { parsePeriodText, toPeriodMonth } from "@/lib/period-parser";
 import { formatMonthID } from "@/lib/period";
 
@@ -172,6 +173,15 @@ export async function POST(_request: Request, ctx: RouteContext<"/api/uploads/[i
         });
       }
     }
+  }
+
+  // Angka operan berubah -> metrik turunan dihitung ulang (Fase 2b). Ditulis-ulang total,
+  // jadi tak ada duplikat. Gagal di sini TIDAK boleh menggagalkan ekstraksi yang sudah
+  // tersimpan (Prinsip #3) — hitung-ulang berikutnya akan memperbaikinya.
+  try {
+    await recomputeDerivedMetrics(upload.report.id);
+  } catch {
+    /* diamkan — angka ekstraksi sudah aman tersimpan */
   }
 
   // TIPE tiap metrik ikut dikirim: tabel koreksi memakainya untuk memilih cara tampil &
