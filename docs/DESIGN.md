@@ -478,6 +478,15 @@ Founder bisa bikin section baru kapan saja. Section = paket:
 kalau nama + KB + ≥1 metrik terisi. Selain itu `draft`. Status dihitung OTOMATIS server,
 bukan disetel manual. — SUDAH DIIMPLEMENTASI.
 
+**Aturan pengisian metrik (penting — memengaruhi akurasi ekstraksi):** kolom **key DAN
+Label sama-sama dikirim ke prompt vision** (`lib/extractor.ts`, format
+`- <key> (<label>, tipe: <type>)`). Karena itu:
+- **Label wajib ditulis PERSIS mengikuti teks di dashboard** — itulah yang dicocokkan model
+  ke label kolom/kartu di screenshot.
+- **key dibuat deskriptif dan serumpun dengan label** (`penjualan`, bukan `m1`): key yang
+  menyimpang dari maknanya ikut menyesatkan model, karena ia pun terbaca di prompt — bukan
+  sekadar pengenal internal.
+
 ## Platform di dua lapisan
 
 - **Lapisan section — identitas.** "Voucher Shopee" dan "Voucher TikTok" = dua section
@@ -836,6 +845,11 @@ fotonya belum ada.
   general/merangkai) — menyusul setelah founder mengisi KB; dua cek bawaan (kontradiksi +
   tone) sudah jalan di Tahap 7b.
 - Konfirmasi label ringan eksplisit (saat ini: dropdown + simpan eksplisit; `labelConfirmed` selalu true).
+- **Reorder prompt Extractor agar Label jadi pencocok UTAMA** (bukan `key`): saat ini
+  `lib/extractor.ts` merender `- <key> (<label>, tipe)`, sehingga `key` yang mendahului.
+  Karena Label-lah yang benar-benar cocok dengan teks dashboard, urutannya sebaiknya dibalik
+  agar Label memimpin. DIKERJAKAN BERSAMA QA regresi ekstraksi (perubahan prompt menyentuh
+  semua tipe metrik) — bukan sekarang.
 - ~~Bersihkan file storage saat hapus report~~ — SELESAI (Jul 2026): `DELETE /api/reports/[id]`
   menghapus file R2/disk semua upload DULU lalu cascade DB (Model B akses); tombol "Hapus report"
   di halaman detail report.
