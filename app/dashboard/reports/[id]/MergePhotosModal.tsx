@@ -11,6 +11,11 @@ import {
   type MergeDirection,
   type Trim,
 } from "@/lib/merge-images";
+import {
+  ANALYSIS_MAX_PX,
+  suggestionToTrim,
+  type PhotoSuggestion,
+} from "@/lib/merge-suggest";
 import { MAX_UPLOAD_BYTES } from "@/lib/reports";
 
 // Gabung Foto (Jul 2026) — PRA-PROSES DI CLIENT. Beberapa potongan screenshot dari satu
@@ -110,6 +115,10 @@ export default function MergePhotosModal({
   const [presetApplied, setPresetApplied] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [saving, setSaving] = useState(false);
+  // Auto-potong (AI): saran trim, BUKAN eksekusi. null = belum/ tidak dipakai.
+  const [ai, setAi] = useState<{ confidence: number; reason: string } | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -155,6 +164,10 @@ export default function MergePhotosModal({
     }
     setDirection(preset.direction);
     setAutoDetected(false);
+    // Preset MENANG atas saran AI dan tidak pernah memanggil AI: nilai yang sudah
+    // divetting operator bulan lalu lebih tepercaya daripada tebakan baru (dan gratis).
+    setAi(null);
+    setAiError("");
     commitItems(list.map((p, i) => ({ ...p, trim: preset.trims[i] ?? { ...NO_TRIM } })));
     markPresetApplied(true);
   }
@@ -167,6 +180,8 @@ export default function MergePhotosModal({
   function resetPreset() {
     if (sectionId) clearPreset(sectionId);
     markPresetApplied(false);
+    setAi(null);
+    setAiError("");
     commitItems(itemsRef.current.map((p) => ({ ...p, trim: { ...NO_TRIM } })));
   }
 
@@ -197,6 +212,9 @@ export default function MergePhotosModal({
       trim: { ...NO_TRIM },
     }));
     const next = [...prev, ...added];
+    // Daftar foto berubah -> saran lama tidak lagi berlaku untuk susunan ini.
+    setAi(null);
+    setAiError("");
     commitItems(next);
     applyPreset(sectionId, next);
     for (const it of added) loadImage(it);
@@ -231,6 +249,8 @@ export default function MergePhotosModal({
     const it = itemsRef.current.find((p) => p.localId === localId);
     if (it) URL.revokeObjectURL(it.url);
     const next = itemsRef.current.filter((p) => p.localId !== localId);
+    setAi(null);
+    setAiError("");
     commitItems(next);
     applyPreset(sectionId, next);
     setSaveError("");
@@ -262,6 +282,77 @@ export default function MergePhotosModal({
     setDirection((d) => (d === "vertical" ? "horizontal" : "vertical"));
     setAutoDetected(false);
     markPresetApplied(false);
+  }
+
+  // --- Auto-potong (AI) ---
+  // AI hanya MENGISI kontrol trim yang sudah ada; crop & gabung tetap dieksekusi
+  // deterministik oleh lib/merge-images.ts, dan preview tetap gerbang keputusan.
+  // Dipanggil ON-DEMAND saja — preset (kalau ada) menang tanpa memanggil AI sama sekali.
+  function toAnalysisBase64(item: Item): string | null {
+    if (!item.img) return null;
+    // Dikecilkan DI CLIENT juga supaya payload kecil; server tetap mengecilkan lagi
+    // sebagai jaring pengaman. Yang dianalisis tata letak, bukan angka.
+    const k = Math.min(1, ANALYSIS_MAX_PX / Math.max(item.width, item.height));
+    const w = Math.max(1, Math.round(item.width * k));
+    const h = Math.max(1, Math.round(item.height * k));
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext("2d");
+    if (!ctx) return null;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(item.img, 0, 0, w, h);
+    return c.toDataURL("image/jpeg", 0.8).split(",")[1] ?? null;
+  }
+
+  async function runAutoTrim() {
+    const list = itemsRef.current;
+    if (list.length < MIN_MERGE_FILES || list.some((it) => !it.img)) return;
+    setAiLoading(true);
+    setAiError("");
+    try {
+      const payload = list.map(toAnalysisBase64);
+      if (payload.some((p) => !p)) {
+        setAiError("Gambar belum siap dianalisis.");
+        return;
+      }
+      const res = await fetch("/api/merge-suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photos: payload, hint: direction }),
+      });
+      if (res.status === 403) {
+        setAiError("Sesi habis — muat ulang halaman.");
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setAiError(data.error || `Analisis gagal (kode ${res.status}).`);
+        return;
+      }
+      const photos: PhotoSuggestion[] = Array.isArray(data.photos) ? data.photos : [];
+      // Gagal apa pun = trim TIDAK berubah. Operator tidak boleh kehilangan
+      // pengaturannya gara-gara fitur bantu.
+      if (photos.length !== list.length) {
+        setAiError("Saran tidak lengkap — garis potong tidak diubah.");
+        return;
+      }
+      if (data.direction === "vertical" || data.direction === "horizontal") {
+        setDirection(data.direction);
+      }
+      setAutoDetected(false);
+      markPresetApplied(false);
+      commitItems(list.map((p, i) => ({ ...p, trim: suggestionToTrim(photos[i]) })));
+      setAi({
+        confidence: typeof data.confidence === "number" ? data.confidence : 0,
+        reason: typeof data.reason === "string" ? data.reason : "",
+      });
+    } catch {
+      setAiError("Kesalahan jaringan.");
+    } finally {
+      setAiLoading(false);
+    }
   }
 
   // --- Preview: dirender ulang tiap file/arah/urutan/trim berubah (debounce) ---
@@ -432,6 +523,16 @@ export default function MergePhotosModal({
           <button onClick={toggleDirection} className="btn-ghost px-3 py-1.5 text-xs">
             Arah: {direction === "vertical" ? "Vertikal ↓" : "Horizontal →"}
           </button>
+          {/* Auto-potong: MENGISI garis potong, tidak menyimpan apa pun. Hasilnya masih
+              harus dilihat operator di preview sebelum tombol simpan ditekan. */}
+          <button
+            onClick={runAutoTrim}
+            disabled={!loaded || items.length < MIN_MERGE_FILES || aiLoading}
+            title="Claude menganalisis bagian yang beririsan, lalu mengisikan garis potong"
+            className="btn-ghost px-3 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            {aiLoading ? "Menganalisis…" : "Auto-potong (AI)"}
+          </button>
           {autoDetected && (
             <span className="badge bg-accent/15 px-2 text-[10px] text-accent-hi">
               arah terdeteksi otomatis
@@ -451,6 +552,24 @@ export default function MergePhotosModal({
             </button>
           )}
         </div>
+
+        {/* Hasil Auto-potong: SELALU disertai ajakan memeriksa preview — saran model tidak
+            pernah jadi keputusan. Confidence rendah dinaikkan jadi peringatan. */}
+        {ai && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span
+              className={`badge px-2 text-[10px] ${
+                ai.confidence < 0.6 ? "bg-warn/15 text-warn" : "bg-accent/15 text-accent-hi"
+              }`}
+            >
+              {ai.confidence < 0.6
+                ? "AI kurang yakin — periksa/geser garis potong"
+                : "saran AI — periksa preview sebelum simpan"}
+            </span>
+            {ai.reason && <span className="text-[11px] text-fg-3">{ai.reason}</span>}
+          </div>
+        )}
+        {aiError && <p className="mt-2 text-xs text-danger">{aiError}</p>}
 
         {items.length === 0 ? (
           <p className="mt-4 text-xs text-fg-3">

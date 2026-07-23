@@ -197,6 +197,49 @@ gambar di sisi CLIENT**, lalu mengunggahnya lewat alur yang sudah ada.
   bahan report — kegagalan `localStorage` di mode privat tidak menggagalkan penggabungan).
 - **Alur unggah foto tunggal tidak berubah sedikit pun.**
 
+### Auto-potong (AI) — pengisi saran, bukan eksekutor
+
+Satu tombol di modal: Claude vision melihat potongan-potongan terpilih, lalu **mengisikan**
+arah gabung + fraksi trim per foto ke kontrol yang sudah ada.
+
+- **Peran AI SEMPIT dan disengaja.** Model tidak pernah memotong, menggabung, atau menyimpan
+  apa pun. Crop + gabung tetap dieksekusi deterministik oleh `lib/merge-images.ts`, dan
+  **preview tetap gerbang keputusan operator** — sejalan Prinsip #1: apa pun yang menyentuh
+  bahan angka wajib bisa diperiksa mata manusia sebelum dipakai. Setelah saran masuk,
+  operator tetap bisa menggeser garis potong (state-nya sama persis).
+- **Prioritas nilai trim saat modal dibuka: preset localStorage > Auto-potong > 0.** Preset
+  yang ada diterapkan **tanpa memanggil AI sama sekali** — nilai yang sudah divetting
+  operator bulan lalu lebih tepercaya daripada tebakan baru, dan gratis. Tombolnya tetap
+  tersedia untuk re-run manual. Hasil AI yang disimpan operator otomatis menjadi preset
+  bulan berikutnya, jadi biayanya sekali per section, bukan tiap bulan.
+- **Hemat token**: foto dikecilkan ke sisi terpanjang ≤ 1200 px sebelum dianalisis (di
+  client DAN lagi di server sebagai jaring pengaman). Yang dianalisis tata letak — mana blok
+  yang terulang — bukan angkanya. Fraksi hasilnya berlaku ke resolusi ASLI di client; inilah
+  keuntungan menyimpan trim sebagai fraksi, bukan piksel.
+- **Bias ke aman: ragu = tidak memotong.** Prompt memerintahkan trim 0 + confidence rendah
+  bila model tidak yakin, termasuk bila foto-foto itu ternyata bukan potongan satu tampilan.
+  Aturannya eksplisit: gabungan bagian tersisa WAJIB memuat semua elemen unik — lebih baik
+  hasilnya dobel daripada ada data yang terbuang.
+- **Validasi server atas keluaran model** (`lib/merge-suggest.ts`, murni & teruji): fraksi
+  di-clamp ke 0..0,7; saran yang menyisakan < 10% pada sumbu mana pun **di-reset ke 0 untuk
+  foto itu** (bukan dipaksa masuk batas — potongan sedalam itu hampir pasti salah baca);
+  jumlah foto tak cocok / bentuk respons rusak → semua trim 0. Sanitizer tidak pernah
+  melempar, dan keluarannya dijamin lolos guard geometri.
+- **Confidence < 0,6 → badge peringatan** ("AI kurang yakin — periksa/geser garis potong")
+  menggantikan badge biasa; `reason` satu kalimat selalu ditampilkan.
+- **Gagal apa pun = trim tidak berubah** (Prinsip #3): fitur bantu tidak boleh menghentikan
+  pekerjaan, operator masih bisa menggeser garis potong manual. Tanpa API key di dev,
+  endpoint mengembalikan trim 0 + confidence 0 — TIDAK mengarang potongan.
+- **Catatan pemakaian (teruji Jul 2026):** alokasi potongan bervariasi antar-run — membuang
+  grafik ganda lewat foto #1 atau foto #2 sama-sama sah dan menghasilkan isi yang sama.
+  Yang KONSISTEN: arah benar, tidak ada elemen unik yang hilang, dan keluarannya selalu
+  lolos guard. Kasus kolom beku (horizontal) jauh lebih stabil daripada kasus panel kartu.
+  Itulah sebabnya preview tetap wajib dan preset dipertahankan menang atas AI.
+- **Endpoint** `POST /api/merge-suggest` — session-guarded, TIDAK menyentuh DB dan tidak
+  menyimpan apa pun (karena itu tak ada pemeriksaan kepemilikan report: tak ada report yang
+  terlibat). Bagian server-only (sharp + SDK) dipisah ke `lib/merge-suggest-vision.ts`
+  supaya modal client bisa memakai kontraknya tanpa menyeret sharp ke bundle browser.
+
 ## Arsitektur Pipeline (4 lapisan tipis + orchestrator)
 
 ```
