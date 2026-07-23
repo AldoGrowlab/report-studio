@@ -106,7 +106,12 @@ export async function suggestMergeTrims(
   const response = await client.messages.create({
     model: MODEL,
     max_tokens: LLM_MAX_TOKENS,
-    thinking: { type: "adaptive" },
+    // TANPA `thinking: { type: "adaptive" }`: model default di sini tier hemat
+    // (claude-haiku-4-5) yang MENOLAK adaptive thinking dengan 400
+    // "adaptive thinking is not supported on this model" — persis kegagalan produksi
+    // Jul 2026. Tugasnya membaca tata letak, bukan penalaran dalam; period-detect
+    // (Haiku juga) memang tidak memakainya dan jalan. Kalau MERGE_SUGGEST_MODEL
+    // dinaikkan ke Opus, call ini tetap sah (Opus tak butuh flag ini).
     output_config: { format: { type: "json_schema", schema: SCHEMA } },
     messages: [
       {

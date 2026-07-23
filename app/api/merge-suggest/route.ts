@@ -62,9 +62,11 @@ export async function POST(request: Request) {
   try {
     const suggestion = await suggestMergeTrims(buffers, hint);
     return NextResponse.json(suggestion);
-  } catch {
-    // Gagal = trim tidak berubah di client (Prinsip #3: fitur bantu tidak boleh
-    // menghentikan pekerjaan — operator masih bisa menggeser garis potong manual).
+  } catch (e) {
+    // Catat penyebab SEBENARNYA ke log server. Tanpa ini, kegagalan hanya tampak sebagai
+    // 502 generik dan log Railway kosong — persis yang menyulitkan diagnosis Jul 2026.
+    // Perilaku ke client TIDAK berubah: tetap 502 + fallback trim-0/manual (Prinsip #3).
+    console.error("[merge-suggest] gagal:", e);
     return NextResponse.json(
       { error: "Analisis otomatis gagal. Geser garis potong manual atau coba lagi." },
       { status: 502 }
