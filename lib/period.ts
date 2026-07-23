@@ -115,6 +115,10 @@ export function computeChainedChanges(periods: PeriodData[]): PeriodChange[] {
     for (const cur of newer.metrics) {
       const prev = olderByKey.get(cur.key);
       if (!prev) continue; // metrik tak ada di periode pembanding
+      // Metrik TEKS bukan besaran — tidak pernah dihitung naik/turun. (value-nya memang
+      // selalu null sehingga guard di bawah sudah cukup; ini eksplisit supaya niatnya
+      // terbaca dan tetap benar kalau bentuk data berubah.)
+      if (cur.type === "text" || prev.type === "text") continue;
       if (cur.value === null || prev.value === null) continue;
       if (cur.valueText === null || prev.valueText === null) continue;
 

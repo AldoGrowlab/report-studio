@@ -1,6 +1,7 @@
 import type { MetricType, ExtractionStatus, Platform } from "@prisma/client";
 import type { ImageBytes } from "@/lib/storage";
 import { parseDurationToSeconds } from "@/lib/duration";
+import { cleanMetricText } from "@/lib/text-metric";
 import { llmBackend, anthropicClient, LLM_MAX_TOKENS } from "@/lib/llm";
 
 // Metrik yang diharapkan section (memandu extractor).
@@ -160,6 +161,29 @@ function buildResults(
     const rawText = item && typeof item.raw_text === "string" ? item.raw_text : null;
     const llmValue =
       item && typeof item.value === "number" && Number.isFinite(item.value) ? item.value : null;
+    // Metrik TEKS punya jalur sendiri dan didahulukan: nilainya bukan angka sama sekali,
+    // dan normalizer notasi singkatan akan membaca "Bumbu Mala 75gr" sebagai 75.
+    // Nilainya tinggal di rawText, value SELALU null (tak pernah ikut aritmetika apa pun).
+    // Pembersihan DETERMINISTIK di kode — bukan diserahkan ke model: hanya penanda potong
+    // di UJUNG yang dibuang ("Bumbu Mala Pedas Hot..." -> "Bumbu Mala Pedas Hot").
+    if (m.type === "text") {
+      const text = cleanMetricText(rawText);
+      const textConfidence = text === null ? 0 : clampConfidence(item?.confidence);
+      return {
+        key: m.key,
+        value: null,
+        rawText: text,
+        confidence: textConfidence,
+        // Tidak ada di gambar -> missing. Terbaca tapi model ragu tetap masuk antrean
+        // konfirmasi manual (Tahap 5), sama perlakuannya dengan angka.
+        status:
+          text === null
+            ? "missing"
+            : textConfidence < LOW_CONFIDENCE_THRESHOLD
+              ? "low_confidence"
+              : "ok",
+      };
+    }
     // Metrik DURASI punya jalur sendiri: normalizer notasi singkatan membuang ":" dan
     // akan membaca "01:23:45" sebagai 12345. Parser durasi mengubahnya ke DETIK
     // (satuan kanonik). Suffix besaran (k/jt/M) tak berlaku di sini -> unknownMagnitude
@@ -220,6 +244,14 @@ async function extractWithClaude(
     `Untuk metrik bertipe "duration": salin raw_text PERSIS bentuk durasinya apa adanya ` +
     `(mis. "01:23:45", "45 s", "12 min", "1h 30min") — JANGAN diubah jadi angka/detik; ` +
     `sistem yang mengonversinya. Isi value dengan durasi dalam DETIK bila kamu yakin, selain itu null. ` +
+    `Untuk metrik bertipe "text" (nama produk / nama affiliator): isi raw_text dengan teks ` +
+    `dan value=null. Salin teks PERSIS seperti tertulis di gambar — DILARANG menerjemahkan, ` +
+    `merapikan ejaan, atau melengkapi teks yang terpotong. Kalau teks terpotong (diakhiri ` +
+    `elipsis atau terputus di tepi kolom), salin bagian yang terbaca saja. ` +
+    `Metrik yang ber-INDEKS SAMA WAJIB berasal dari BARIS TABEL YANG SAMA: nama_produk_1 dan ` +
+    `penjualan_produk_1 = baris peringkat 1 (baris teratas tabel sesuai urutan tampil), ` +
+    `nama_produk_2 dan penjualan_produk_2 = baris ke-2, dan seterusnya. JANGAN mengurutkan ` +
+    `ulang tabel — ikuti urutan yang tampak di gambar. ` +
     `JANGAN menebak: kalau metrik tidak ada di gambar, value=null, raw_text=null, confidence=0. ` +
     `Jangan menghitung ulang atau membuat angka baru.\n\nMetrik:\n${metricList}`;
 
@@ -276,6 +308,24 @@ async function extractWithClaude(
 function extractWithStub(metrics: ExpectedMetric[]): ExtractionResult[] {
   return metrics.map((m, i) => {
     const mode = i % 3;
+    // Metrik teks: nilainya di rawText, value null — supaya pemasangan nama+angka dan
+    // tampilan UI teruji tanpa API key. Elipsis akhir sengaja dipasang lalu dibersihkan.
+    if (m.type === "text") {
+      const text = mode === 2 ? null : cleanMetricText(`[DEV STUB] ${m.key}...`);
+      const confidence = text === null ? 0 : mode === 1 ? 0.5 : 0.95;
+      return {
+        key: m.key,
+        value: null,
+        rawText: text,
+        confidence,
+        status:
+          text === null
+            ? "missing"
+            : confidence < LOW_CONFIDENCE_THRESHOLD
+              ? "low_confidence"
+              : "ok",
+      };
+    }
     if (mode === 2) {
       // missing
       return { key: m.key, value: null, rawText: `[DEV STUB] ${m.key}`, confidence: 0, status: "missing" };

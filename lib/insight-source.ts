@@ -102,12 +102,16 @@ export async function buildAnalystSources(
       .map((e) => {
         const meta = metricByKey.get(e.key);
         const type = meta?.type ?? "number";
+        // Metrik TEKS: nilainya tinggal di rawText; value/valueText dipaksa null supaya
+        // tidak pernah masuk aritmetika (perbandingan periode) maupun kosakata bold.
+        const isText = type === "text";
         return {
           key: e.key,
           label: meta?.label ?? e.key,
           type,
-          value: e.value,
-          valueText: e.value === null ? null : abbreviateNumberID(e.value, type),
+          value: isText ? null : e.value,
+          valueText: isText || e.value === null ? null : abbreviateNumberID(e.value, type),
+          text: isText ? e.rawText : null,
           status: e.status,
         };
       }),

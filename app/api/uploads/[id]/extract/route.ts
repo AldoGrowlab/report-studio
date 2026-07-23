@@ -75,5 +75,13 @@ export async function POST(_request: Request, ctx: RouteContext<"/api/uploads/[i
     return tx.extraction.findMany({ where: { uploadId: id }, orderBy: { key: "asc" } });
   });
 
-  return NextResponse.json({ extractor: outcome.extractor, extractions });
+  // TIPE tiap metrik ikut dikirim: tabel koreksi memakainya untuk memilih cara tampil &
+  // cara edit (durasi manusiawi, teks sebagai teks). Tanpa ini state client kehilangan
+  // `type` begitu hasil ekstraksi diganti dari respons ini.
+  const typeByKey = new Map(upload.section.metrics.map((m) => [m.key, m.type]));
+
+  return NextResponse.json({
+    extractor: outcome.extractor,
+    extractions: extractions.map((e) => ({ ...e, type: typeByKey.get(e.key) ?? "number" })),
+  });
 }

@@ -1,6 +1,7 @@
 import type { ExtractionStatus, MetricType, Platform } from "@prisma/client";
 import { formatMonthID, type PeriodChange } from "@/lib/period";
 import { formatDurationID } from "@/lib/duration";
+import { metricIndex } from "@/lib/text-metric";
 import {
   flattenPoints,
   SUB_POINT_PREFIX,
@@ -61,6 +62,10 @@ export type AnalystMetric = {
   type: MetricType;
   value: number | null;
   valueText: string | null; // null = missing ("tidak tersedia")
+  // Metrik bertipe TEKS (nama produk/affiliator): nilainya di sini, dan value/valueText
+  // SELALU null. Dipisah dari valueText dengan sengaja — valueText adalah kosakata bold
+  // angka, dan nama BUKAN angka sehingga tidak boleh ikut ter-bold (DESIGN §Tipe Metrik Teks).
+  text: string | null;
   status: ExtractionStatus;
 };
 
@@ -160,14 +165,51 @@ export function renderStoredPoints(points: string[]): string {
     .join("\n");
 }
 
+// Baris-baris satu sumber. Metrik ANGKA dirender PERSIS seperti sebelumnya (tak ada
+// perubahan perilaku untuk section yang tak punya metrik teks). Metrik TEKS ditambahkan:
+// kalau ada metrik angka ber-INDEKS SAMA (nama_produk_1 + penjualan_produk_1 = baris
+// peringkat 1 di tabel screenshot), pasangannya dirender sebagai baris tabel; kalau tidak
+// punya pasangan, tampil apa adanya sebagai "<Label>: <teks>".
+export function renderMetricLines(metrics: AnalystMetric[]): string {
+  const numeric = metrics.filter((m) => m.type !== "text");
+  const texts = metrics.filter((m) => m.type === "text");
+
+  const lines = numeric.map(
+    (m) => `- ${m.label}: ${m.valueText ?? "tidak tersedia di foto ini"}`
+  );
+
+  const rows: string[] = [];
+  for (const t of texts) {
+    const idx = metricIndex(t.key);
+    const partners = idx === null ? [] : numeric.filter((n) => metricIndex(n.key) === idx);
+    const name = t.text ?? "tidak tersedia di foto ini";
+    if (partners.length === 0) {
+      lines.push(`- ${t.label}: ${name}`);
+      continue;
+    }
+    // Satu pasangan: cukup angkanya. Lebih dari satu: sertakan label supaya tak ambigu.
+    const nums = partners
+      .map((n) =>
+        partners.length > 1
+          ? `${n.label} ${n.valueText ?? "tidak tersedia"}`
+          : (n.valueText ?? "tidak tersedia")
+      )
+      .join(", ");
+    rows.push(`- Peringkat ${idx} — ${name}: ${nums}`);
+  }
+  if (rows.length > 0) {
+    lines.push("Baris tabel (nama & angka pada BARIS YANG SAMA):", ...rows);
+  }
+  return lines.join("\n");
+}
+
 // Blok angka yang dikirim ke model — hanya bentuk singkat yang boleh dikutip.
-// Section ber-perbandingan: blok dilabeli BULAN (bukan "Sumber #n") + penanda utama.
+// Section ber-perbandingan: blok dilabeli BULAN (bukan "Sumber #n") + penanda utama,
+// sehingga tiap bulan punya set nama+angka sendiri.
 function renderSources(sources: AnalystSource[], multiSource: boolean): string {
   return sources
     .map((s) => {
-      const lines = s.metrics
-        .map((m) => `- ${m.label}: ${m.valueText ?? "tidak tersedia di foto ini"}`)
-        .join("\n");
+      const lines = renderMetricLines(s.metrics);
       if (s.periodLabel) {
         return `Bulan ${s.periodLabel}${s.isPrimary ? " (PERIODE UTAMA)" : ""}:\n${lines}`;
       }
@@ -213,6 +255,25 @@ function sourceRule(input: AnalystInput, multiSource: boolean): string {
     : `2. Semua angka berasal dari satu sumber (foto).\n`;
 }
 
+// Aturan tambahan khusus metrik TEKS (nama produk/affiliator). Mengembalikan string
+// KOSONG kalau section ini tak punya metrik teks — prompt section lama tak berubah
+// sedikit pun. Dinomori "3b" supaya penomoran aturan yang sudah ada tetap utuh.
+function textRule(input: AnalystInput): string {
+  const hasText = input.sources.some((s) => s.metrics.some((m) => m.type === "text"));
+  if (!hasText) return "";
+  return (
+    `3b. Nama/teks dari data dikutip PERSIS seperti diberikan. Kalau teks tampak terpotong, ` +
+    `kutip apa adanya atau rujuk lewat peringkat/posisinya — DILARANG melengkapi potongan ` +
+    `dengan tebakan.` +
+    (input.periodComparison
+      ? ` Sebelum menarasikan persen perubahan suatu PERINGKAT, cek dulu apakah nama pada ` +
+        `peringkat itu SAMA di kedua bulan. Kalau berbeda, bingkai sebagai PERGANTIAN ` +
+        `penghuni peringkat (sebut kedua namanya), BUKAN naik/turunnya satu produk yang sama.`
+      : "") +
+    `\n`
+  );
+}
+
 // ---- Claude Opus 4.8 (structured output, pola sama dgn lib/extractor.ts) ----
 async function analyzeWithClaude(input: AnalystInput): Promise<string[]> {
   const client = await anthropicClient();
@@ -241,6 +302,7 @@ async function analyzeWithClaude(input: AnalystInput): Promise<string[]> {
       : ` Perbandingan antar periode/bulan juga DILARANG (belum ada datanya).\n`) +
     sourceRule(input, multiSource) +
     `3. Metrik "tidak tersedia" cukup disebut tidak tersedia — jangan berspekulasi nilainya.\n` +
+    textRule(input) +
     `4. ${pointsOutputRule("analisanya")} ` +
     `Fokus pada apa yang dikatakan angka menurut kerangka KB.`;
 
@@ -267,7 +329,14 @@ function analyzeWithStub(input: AnalystInput): string[] {
   const multiSource = input.sources.length > 1;
   const points = input.sources.map((s) => {
     const nums = s.metrics
-      .map((m) => `${m.label} ${m.valueText ?? "tidak tersedia"}`)
+      .map(
+        (m) =>
+          `${m.label} ${
+            m.type === "text"
+              ? (m.text ?? "tidak tersedia")
+              : (m.valueText ?? "tidak tersedia")
+          }`
+      )
       .join(", ");
     const label = s.periodLabel
       ? ` ${s.periodLabel}${s.isPrimary ? " (utama)" : ""}:`
@@ -282,7 +351,11 @@ function analyzeWithStub(input: AnalystInput): string[] {
       1,
       0,
       `${SUB_POINT_PREFIX}[DEV STUB] sub-poin: ${firstMetric.label} = ` +
-        `${firstMetric.valueText ?? "tidak tersedia"}.`
+        `${
+          firstMetric.type === "text"
+            ? (firstMetric.text ?? "tidak tersedia")
+            : (firstMetric.valueText ?? "tidak tersedia")
+        }.`
     );
   }
   for (const c of input.periodComparison?.changes ?? []) {
@@ -344,6 +417,7 @@ async function reviseWithClaude(
       : `\n`) +
     sourceRule(input, multiSource) +
     `3. Metrik "tidak tersedia" cukup disebut tidak tersedia — jangan berspekulasi nilainya.\n` +
+    textRule(input) +
     `4. ${pointsOutputRule("analisanya")}\n` +
     `5. Poin yang tidak disinggung instruksi koreksi pertahankan maknanya (boleh disesuaikan ` +
     `seperlunya agar keseluruhan tetap koheren).`;

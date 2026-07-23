@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { missingPhotoSections, groupBySection, formatValueID } from "@/lib/uploads-view";
 import { formatDurationID, parseDurationToSeconds } from "@/lib/duration";
+import { MAX_TEXT_LENGTH } from "@/lib/text-metric";
 import { parsePointLine, splitByNumbers } from "@/lib/insight-format";
 import { monthOptions, formatMonthID } from "@/lib/period";
 import { MAX_UPLOAD_BYTES } from "@/lib/reports";
@@ -19,7 +20,7 @@ type SectionOption = {
 
 type ExtractionStatus = "ok" | "missing" | "low_confidence";
 
-type MetricType = "number" | "currency" | "percent" | "ratio" | "duration";
+type MetricType = "number" | "currency" | "percent" | "ratio" | "duration" | "text";
 
 type Extraction = {
   id: string;
@@ -29,8 +30,9 @@ type Extraction = {
   confidence: number;
   status: ExtractionStatus;
   manuallyConfirmed: boolean;
-  // Tipe metrik section-nya — menentukan cara angka ditampilkan & diedit.
+  // Tipe metrik section-nya — menentukan cara nilai ditampilkan & diedit.
   // Durasi disimpan DETIK, tapi ditampilkan/diketik sebagai "1j 23mnt 45dtk" / "01:23:45".
+  // Teks (nama produk/affiliator) nilainya ada di rawText, value selalu null.
   type: MetricType;
 };
 
@@ -483,13 +485,15 @@ export default function UploadManager({
 
   function startEdit(e: Extraction) {
     setEditError((p) => ({ ...p, [e.id]: "" }));
-    // Durasi diisi dalam bentuk manusiawi supaya user mengetik "1j 23mnt", bukan 5025.
+    // Teks: nilainya di rawText. Durasi diisi bentuk manusiawi ("1j 23mnt", bukan 5025).
     const draft =
-      e.value === null
-        ? ""
-        : e.type === "duration"
-          ? formatDurationID(e.value)
-          : String(e.value);
+      e.type === "text"
+        ? (e.rawText ?? "")
+        : e.value === null
+          ? ""
+          : e.type === "duration"
+            ? formatDurationID(e.value)
+            : String(e.value);
     setEditDraft((p) => ({ ...p, [e.id]: draft }));
   }
 
@@ -502,14 +506,20 @@ export default function UploadManager({
     setEditError((p) => ({ ...p, [extractionId]: "" }));
   }
 
-  async function patchExtraction(uploadId: string, extractionId: string, value: number | null) {
+  // Body berbeda menurut tipe metrik: { value } untuk angka, { rawText } untuk teks.
+  // Server tetap yang memutuskan mana yang dipakai berdasar tipe metrik sebenarnya.
+  async function patchExtraction(
+    uploadId: string,
+    extractionId: string,
+    payload: { value: number | null } | { rawText: string | null }
+  ) {
     setEditSaving((p) => ({ ...p, [extractionId]: true }));
     setEditError((p) => ({ ...p, [extractionId]: "" }));
     try {
       const res = await fetch(`/api/extractions/${extractionId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ value }),
+        body: JSON.stringify(payload),
       });
       if (res.status === 403) {
         router.push("/login");
@@ -550,8 +560,21 @@ export default function UploadManager({
   // DETIK di sini — server tetap hanya menerima angka (satuan kanonik).
   function saveEdit(uploadId: string, e: Extraction) {
     const raw = (editDraft[e.id] ?? "").trim();
+    // Metrik TEKS: dikirim apa adanya (server yang membersihkan elipsis akhir & membatasi
+    // panjang, aturan SAMA dengan Extractor). Kosong = teksnya memang tidak ada.
+    if (e.type === "text") {
+      if (raw.length > MAX_TEXT_LENGTH) {
+        setEditError((p) => ({
+          ...p,
+          [e.id]: `Teks maksimal ${MAX_TEXT_LENGTH} karakter.`,
+        }));
+        return;
+      }
+      void patchExtraction(uploadId, e.id, { rawText: raw === "" ? null : raw });
+      return;
+    }
     if (raw === "") {
-      void patchExtraction(uploadId, e.id, null);
+      void patchExtraction(uploadId, e.id, { value: null });
       return;
     }
     if (e.type === "duration") {
@@ -563,7 +586,7 @@ export default function UploadManager({
         }));
         return;
       }
-      void patchExtraction(uploadId, e.id, seconds);
+      void patchExtraction(uploadId, e.id, { value: seconds });
       return;
     }
     const num = Number(raw.replace(",", "."));
@@ -571,12 +594,16 @@ export default function UploadManager({
       setEditError((p) => ({ ...p, [e.id]: "Masukkan angka yang valid." }));
       return;
     }
-    void patchExtraction(uploadId, e.id, num);
+    void patchExtraction(uploadId, e.id, { value: num });
   }
 
   // Konfirmasi satu-klik untuk baris ragu: nilai tetap, status jadi ok + tanda manual.
   function confirmOne(uploadId: string, e: Extraction) {
-    void patchExtraction(uploadId, e.id, e.value);
+    void patchExtraction(
+      uploadId,
+      e.id,
+      e.type === "text" ? { rawText: e.rawText } : { value: e.value }
+    );
   }
 
   // --- Insight Analyst per section (Tahap 6a) ---
@@ -1272,7 +1299,10 @@ export default function UploadManager({
                                     <div>
                                       <input
                                         type="text"
-                                        inputMode="decimal"
+                                        // Metrik teks diketik sebagai teks biasa; papan
+                                        // ketik angka hanya untuk metrik numerik/durasi.
+                                        inputMode={e.type === "text" ? "text" : "decimal"}
+                                        maxLength={e.type === "text" ? MAX_TEXT_LENGTH : undefined}
                                         value={editDraft[e.id]}
                                         onChange={(ev) =>
                                           setEditDraft((p) => ({ ...p, [e.id]: ev.target.value }))
@@ -1283,7 +1313,9 @@ export default function UploadManager({
                                         }}
                                         autoFocus
                                         placeholder="kosong = tidak ada"
-                                        className="input w-28 px-2 py-0.5 text-xs"
+                                        className={`input px-2 py-0.5 text-xs ${
+                                          e.type === "text" ? "w-56" : "w-28"
+                                        }`}
                                       />
                                       {editError[e.id] && (
                                         <p className="mt-0.5 text-[10px] text-danger">
@@ -1295,9 +1327,12 @@ export default function UploadManager({
                                     // Mode baca saja: pemisah ribuan id-ID, murni kosmetik.
                                     // Input Edit diisi terpisah di startEdit, bukan dari teks ini.
                                     // Durasi ditampilkan manusiawi ("1j 23mnt"), bukan detik mentah.
-                                    e.type === "duration" && e.value !== null
-                                      ? formatDurationID(e.value)
-                                      : formatValueID(e.value)
+                                    // Teks: nilainya memang di rawText (value selalu null).
+                                    e.type === "text"
+                                      ? (e.rawText ?? "—")
+                                      : e.type === "duration" && e.value !== null
+                                        ? formatDurationID(e.value)
+                                        : formatValueID(e.value)
                                   )}
                                 </td>
                                 <td className="py-1 pr-2 text-fg-3 truncate max-w-[10rem]">

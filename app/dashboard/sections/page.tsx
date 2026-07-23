@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 type Platform = "shopee" | "tiktok";
-type MetricType = "number" | "currency" | "percent" | "ratio" | "duration";
+type MetricType = "number" | "currency" | "percent" | "ratio" | "duration" | "text";
 
 type MetricRow = {
   key: string;
@@ -30,6 +30,9 @@ const METRIC_TYPES: { value: MetricType; label: string }[] = [
   { value: "percent", label: "Persen" },
   { value: "ratio", label: "Rasio" },
   { value: "duration", label: "Durasi" },
+  // Teks (nama produk/affiliator): bukan angka — tidak pernah dihitung/dibandingkan,
+  // dipasangkan dengan metrik angka ber-indeks sama (nama_produk_1 + penjualan_produk_1).
+  { value: "text", label: "Teks" },
 ];
 
 function emptyMetric(): MetricRow {

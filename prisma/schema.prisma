@@ -61,6 +61,10 @@ enum MetricType {
   // Jul 2026 — durasi. Nilai disimpan dalam satuan KANONIK DETIK di Extraction.value
   // (angka penuh, Prinsip #6); bentuk "1j 23mnt 45dtk" hanya saat dibahasakan.
   duration
+  // Jul 2026 — TEKS (nama produk/affiliator). Bukan angka: nilainya disimpan di
+  // Extraction.rawText dan Extraction.value tetap NULL. Tidak pernah ikut aritmetika,
+  // tidak masuk kosakata bold. Lihat docs/DESIGN.md §Tipe Metrik Teks.
+  text
 }
 
 model SectionMetric {

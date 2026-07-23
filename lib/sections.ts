@@ -19,7 +19,14 @@ export type SectionInput = {
   metrics: MetricInput[];
 };
 
-const METRIC_TYPES: MetricType[] = ["number", "currency", "percent", "ratio", "duration"];
+const METRIC_TYPES: MetricType[] = [
+  "number",
+  "currency",
+  "percent",
+  "ratio",
+  "duration",
+  "text",
+];
 
 // Aturan inti: section "active" hanya kalau lengkap
 // (nama terisi + KB terisi + minimal 1 metrik). Selain itu "draft".

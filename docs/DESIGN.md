@@ -36,6 +36,9 @@
      KANONIK **detik** di `Extraction.value`, dibahasakan sebagai "1j 23mnt 45dtk"
      (komponen bernilai 0 dibuang; minimal "0dtk"). 5.025 detik → "1j 23mnt 45dtk",
      BUKAN "5,0k". Lihat §Tipe Metrik Durasi.
+   - **Metrik TEKS (Jul 2026) di luar aturan ini seluruhnya** — bukan angka, jadi tak
+     pernah disingkat, dihitung, maupun di-bold. Disimpan apa adanya di
+     `Extraction.rawText` (`value` NULL). Lihat §Tipe Metrik Teks.
 
 ## Normalisasi Notasi Singkatan (aturan ekstraksi permanen, per-platform)
 
@@ -83,7 +86,8 @@ Contoh (teruji): Shopee `179.395,44K`→179395440, `2.069,95M`→2069950000, `23
 ## Tipe Metrik Durasi (Jul 2026)
 
 Tipe metrik kelima di samping `number`/`currency`/`percent`/`ratio`: **`duration`**
-(label UI "Durasi"), untuk metrik seperti durasi live.
+(label UI "Durasi"), untuk metrik seperti durasi live. (Yang keenam, `text`, dibahas di
+§Tipe Metrik Teks.)
 
 - **Satuan kanonik = DETIK** di `Extraction.value` (Prinsip #6: simpan penuh, singkat hanya
   saat dibahasakan). `raw_text` tetap teks asli apa adanya (mis. `01:23:45`).
@@ -101,6 +105,49 @@ Tipe metrik kelima di samping `number`/`currency`/`percent`/`ratio`: **`duration
 - **UI koreksi manual**: nilai ditampilkan & diketik manusiawi ("1j 23mnt", "01:23:45",
   "45 s") lalu dikonversi ke detik di client; API `/api/extractions/[id]` tetap hanya
   menerima angka (satuan kanonik) — kontrak server tidak berubah.
+
+## Tipe Metrik Teks (Jul 2026)
+
+Tipe metrik keenam: **`text`** (label UI "Teks"), untuk nilai yang memang BUKAN angka —
+nama produk, nama affiliator. Tujuannya agar nama dari screenshot ikut dianalisa Analyst,
+bukan cuma angkanya.
+
+- **Penyimpanan: menumpang `Extraction.rawText`, `Extraction.value` tetap NULL.** TANPA
+  kolom/tabel baru — satu-satunya perubahan schema adalah nilai enum `MetricType`
+  (`ALTER TYPE ... ADD VALUE 'text'`, aditif & non-destruktif). Alasan: teks tak punya
+  bentuk kanonik numerik, jadi kolom yang sudah menampung "teks apa adanya dari gambar"
+  adalah tempat yang benar; menambah kolom `textValue` hanya menduplikasi maknanya.
+  **Konsekuensi yang diterima:** untuk metrik teks `rawText` BUKAN lagi provenance OCR
+  murni — koreksi manual menimpanya, karena di sanalah nilainya tinggal. Untuk metrik
+  ANGKA aturan lama tetap: koreksi manual TIDAK menyentuh `rawText`/`confidence`.
+- **Keputusan isi: simpan apa adanya, tanpa elipsis akhir, tanpa tebakan.** Model diminta
+  menyalin teks PERSIS seperti tertulis — dilarang menerjemahkan, merapikan ejaan, atau
+  melengkapi teks yang terpotong; kalau terpotong, salin yang terbaca saja. Pembuangan
+  penanda potong dilakukan KODE (`lib/text-metric.ts`), bukan model: hanya `...`/`…`/`··`
+  di **ujung** yang dibuang (`"Bumbu Mala Pedas Hot..."` → `"Bumbu Mala Pedas Hot"`).
+  Titik TUNGGAL yang sah (`"75gr."`) dan bagian TENGAH teks tidak pernah disentuh.
+- **Aturan baris-sama untuk metrik ber-indeks.** Metrik dengan sufiks indeks sama WAJIB
+  berasal dari baris tabel yang sama: `nama_produk_1` + `penjualan_produk_1` = baris
+  peringkat 1 (baris teratas sesuai urutan tampil), `_2` = baris ke-2, dst. Model dilarang
+  mengurutkan ulang tabel. Saat data dirakit untuk Analyst, pasangan itu dirender sebagai
+  `- Peringkat 1 — <nama>: <angka>` (per bulan pada section perbandingan, per Sumber #n
+  pada section multi-sumber). Metrik teks tanpa pasangan angka tampil `- <Label>: <teks>`.
+- **Jalur sendiri di Extractor, didahulukan sebelum normalizer angka** — kalau lolos ke
+  sana, `"Bumbu Mala 75gr"` terbaca **75** dan `"Kaos Polos 2M"` jadi **2 miliar**.
+- **Tidak pernah ikut aritmetika**: `computeChainedChanges` melewati metrik teks, jadi
+  tak ada persen/pp untuk nama. **Tidak pernah ter-bold**: `valueText` metrik teks null,
+  sehingga nama tak masuk `Insight.numbers` (kosakata bold) — nama bukan angka.
+- **Aturan Analyst tambahan** (hanya muncul di prompt kalau section punya metrik teks,
+  jadi prompt section lama tak berubah): nama dikutip persis; teks terpotong dirujuk apa
+  adanya atau lewat peringkatnya, dilarang ditebak; pada section perbandingan periode,
+  sebelum menarasikan persen suatu peringkat wajib dicek apakah nama peringkat itu sama
+  di kedua bulan — kalau berbeda, dibingkai sebagai **pergantian penghuni peringkat**
+  (sebut kedua nama), bukan naik/turunnya satu produk.
+- **UI koreksi manual**: input TEKS (bukan angka), maks 200 karakter, dibersihkan dengan
+  helper yang SAMA dengan Extractor. API `/api/extractions/[id]` menerima
+  `{ rawText: string | null }` untuk metrik teks dan `{ value: number | null }` untuk
+  metrik angka — bentuk body ditentukan TIPE metrik di server, bukan oleh client. Alur
+  low-confidence → konfirmasi manual berlaku sama seperti angka.
 
 ## Arsitektur Pipeline (4 lapisan tipis + orchestrator)
 
@@ -278,6 +325,8 @@ fotonya belum ada.
 | Penyingkatan angka | Hanya saat dibahasakan (caption/narasi), tak pernah saat disimpan. Aturan k/jt/miliar 1 desimal — lihat Prinsip #6. |
 | Notasi singkatan di screenshot | Extractor menormalkan `raw_text` → nilai PENUH secara deterministik, per-platform (`M`=juta di Shopee, `M`=miliar di TikTok). Lihat §Normalisasi Notasi Singkatan. |
 | Metrik durasi (`hh:mm:ss`, `45 s`, `12 min`, `1h 30min`) | Jalur parsing SENDIRI di Extractor (normalizer singkatan membuang `:` → `01:23:45` jadi 12345). Disimpan detik, dibahasakan "1j 23mnt 45dtk", dibandingkan relatif (%). Lihat §Tipe Metrik Durasi. |
+| Metrik teks (nama produk/affiliator) | Bukan angka: nilainya di `Extraction.rawText`, `value` NULL. Disalin PERSIS, penanda potong di UJUNG dibuang KODE, tak pernah dilengkapi tebakan. Tak pernah dihitung (tanpa persen/pp) dan tak pernah ter-bold. Metrik ber-indeks sama = baris tabel sama. Lihat §Tipe Metrik Teks. |
+| Nama peringkat berganti antar bulan | Analyst wajib membingkainya sebagai PERGANTIAN penghuni peringkat (sebut kedua nama), BUKAN naik/turunnya satu produk yang sama. |
 | Section dengan perbandingan periode | Penanda bulan per-FOTO (bukan per-report); SATU foto per bulan (duplikat ditolak server); foto pembanding di-upload ulang tiap bulan, tanpa memori antar-report; Extractor tak menggabung; persen/pp dihitung KODE berantai antar bulan berdekatan (lewati bila data tak lengkap/pembagi 0), Analyst hanya menarasikan. Lihat §Perbandingan Periode. |
 | Slide kesimpulan/summary | Ditulis VALIDATOR (bukan agent baru), per-platform di akhir bloknya masing-masing; TIDAK ada kesimpulan gabungan lintas-platform. Lihat §Validator & Kesimpulan. |
 
