@@ -377,6 +377,22 @@ referensi metrik turunan (Fase 2) — ref menunjuk kunci yang sama persis.
   "pilih sub-grup dulu", bukan diekstrak dengan daftar campuran.
 - **"Satu bulan satu foto" dan "satu periode utama" kini per (report, section, SUB-GRUP)** —
   tiap tool punya periode utamanya sendiri, karena perbandingan antar bulan juga per tool.
+- **Kelengkapan dinilai atas GABUNGAN foto satu sub-grup, bukan per foto** — satu foto
+  Flash Sale mungkin hanya memuat sebagian metriknya, yang lain melengkapi
+  (`lib/completeness.ts`, murni & teruji). **Sub-grup ber-KB tanpa satu pun foto BUKAN
+  error**: daftar tool yang aktif berbeda tiap klien dan tiap bulan, jadi yang terbit cuma
+  catatan info *"Tidak ada aktivitas &lt;label&gt; bulan ini"*. Metrik hilang dari sub-grup yang
+  ADA fotonya → flag `kelengkapan` dengan nama ber-prefix: `required` → severity **tinggi**,
+  opsional → **info**. Metrik `required` yang masih `low_confidence` DAN belum dikonfirmasi
+  manusia dihitung BELUM lengkap — angka yang belum divetting tak boleh lolos diam-diam.
+- **Gabung Foto hanya menerima potongan dari SUB-GRUP YANG SAMA.** Tab tiap potongan dibaca
+  lalu campuran ditolak: menggabung Flash Sale dengan Voucher menghasilkan satu foto yang
+  angkanya milik dua tool, dan ekstraksi ber-scope tidak punya cara memisahkannya lagi.
+  Hasil gabungan **mewarisi** label sub-grup sumbernya.
+- **Preset trim di-key per section + sub-grup** (`mergePreset:<sectionId>:<subGroupKey>`):
+  potongan Flash Sale dan Voucher berbeda, presetnya tak boleh saling menimpa. Section
+  tanpa sub-grup tetap memakai key LAMA persis — preset yang sudah ada di browser operator
+  tetap terbaca, **tanpa migrasi paksa localStorage**.
 - **Foto menyimpan `subGroupKey` sebagai STRING, bukan FK** — sama seperti `Extraction.key`
   terhadap metrik. Founder menata ulang KB tidak menghapus foto yang sudah ada.
 
@@ -547,7 +563,7 @@ fotonya belum ada.
 | Kasus | Keputusan |
 |---|---|
 | Dua+ foto untuk section sama | Berdampingan sebagai sumber terpisah. TIDAK pernah gabung/jumlah/rata-rata otomatis. Analyst narasikan tiap sumber. |
-| Metrik wajib (`required`) hilang | Section tetap dianalisa dengan angka yang ada. **BELUM DIIMPLEMENTASIKAN (per Jul 2026): `required` disimpan & bisa dicentang founder, tapi belum ada kode yang memeriksanya — tidak ada flag yang terbit.** Validator kelengkapan dibangun di Fase 1c, langsung per sub-grup. |
+| Metrik wajib (`required`) hilang | Section tetap dianalisa dengan angka yang ada; kekurangan di-flag `kelengkapan` severity tinggi saat "Buat kesimpulan" (Fase 1c). Dinilai per SUB-GRUP atas gabungan foto. Lihat §Sub-grup Section. |
 | Angka sama nama lintas section (mis. GMV) | TIDAK direkonsiliasi. Konsistensi dijaga di level narasi saja. |
 | Validator masih tak cocok setelah revisi ke-1 | Escalate + flag ke ringkasan akhir. Render tetap jalan. |
 | User salah pilih section | Label terkunci ke section aktif; mitigasi via konfirmasi label ringan. |
@@ -567,10 +583,10 @@ fotonya belum ada.
 ## Sistem Flag
 
 - Dua tingkat keparahan: *info* (narasi janggal, metrik opsional hilang) → tetap render,
-  tandai; *tinggi* (menyentuh presisi) → pertimbangkan tahan bagian itu. Yang SUDAH terbit
-  hari ini: `inkonsistensi` (info, dari escalate Validator) dan `periode` (tinggi, dari
-  Deteksi Bulan Otomatis). Flag untuk metrik `required` yang hilang/ragu **belum ada** —
-  menyusul di Fase 1c bersama validator kelengkapan per sub-grup.
+  tandai; *tinggi* (menyentuh presisi) → pertimbangkan tahan bagian itu. Yang terbit hari ini:
+  `inkonsistensi` (info, escalate Validator), `periode` (tinggi, Deteksi Bulan Otomatis),
+  dan `kelengkapan` (Fase 1c — tinggi bila metrik `required` hilang/ragu, info bila metrik
+  opsional hilang atau sub-grup tak berfoto).
 - Flag harus visible di ringkasan akhir (bukan terkubur di log).
 - Akumulasi flag = alat perbaikan KB. Sering ke-flag lintas report → KB perlu dipertajam.
   Tiap insight bawa `kb_version` untuk pelacakan.

@@ -1009,9 +1009,12 @@ export default function UploadManager({
       if (Array.isArray(data.revisions) && data.revisions.length > 0) {
         setRevisions((p) => [...(data.revisions as InsightRevisionView[]), ...p]);
       }
+      // Flag platform ini diganti TOTAL oleh hasil run barusan (inkonsistensi DAN
+      // kelengkapan sama-sama ditulis ulang di server). Flag "periode" milik platform
+      // lain / section lain tetap dipertahankan.
       setFlags((p) => [
         ...((data.flags ?? []) as FlagView[]),
-        ...p.filter((f) => f.platform !== platform),
+        ...p.filter((f) => f.platform !== platform || f.type === "periode"),
       ]);
       if (data.consistency) {
         const c = data.consistency as {
@@ -1814,9 +1817,15 @@ export default function UploadManager({
                   className={`font-medium ${f.severity === "tinggi" ? "text-danger" : "text-warn"}`}
                 >
                   ⚠ [{f.platform === "shopee" ? "Shopee" : "TikTok"}] {f.section}
-                  {f.type === "periode" && (
-                    <span className="ml-1.5 badge bg-danger/15 px-1.5 text-[10px] text-danger">
-                      periode
+                  {f.type !== "inkonsistensi" && (
+                    <span
+                      className={`ml-1.5 badge px-1.5 text-[10px] ${
+                        f.severity === "tinggi"
+                          ? "bg-danger/15 text-danger"
+                          : "bg-surface-2 text-fg-3"
+                      }`}
+                    >
+                      {f.type}
                     </span>
                   )}
                 </span>

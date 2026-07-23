@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { abbreviateNumberID, type AnalystSource } from "@/lib/analyst";
+import { displayMetricName, scopedMetricKey } from "@/lib/subgroups";
 import {
   computeChainedChanges,
   formatMonthID,
@@ -34,7 +35,7 @@ export async function buildAnalystSources(
 ): Promise<SourcesResult> {
   const section = await prisma.section.findUnique({
     where: { id: sectionId },
-    include: { metrics: true },
+    include: { metrics: true, subGroups: { orderBy: { order: "asc" } } },
   });
   if (!section) {
     return { ok: false, error: "Section tidak ditemukan." };
@@ -59,6 +60,20 @@ export async function buildAnalystSources(
     };
   }
 
+  // Fase 1 — semua aturan periode di bawah berlaku PER SUB-GRUP. Flash Sale Juni dan
+  // Voucher Juni adalah dua foto sah, dan tiap tool punya periode utamanya sendiri.
+  const groupLabel = new Map(section.subGroups.map((g) => [g.key, g.label]));
+  const byGroup = new Map<string, typeof uploads>();
+  for (const u of uploads) {
+    const list = byGroup.get(u.subGroupKey);
+    if (list) list.push(u);
+    else byGroup.set(u.subGroupKey, [u]);
+  }
+  const scopeName = (key: string) => {
+    const label = groupLabel.get(key);
+    return label ? `sub-grup ${label}` : "section ini";
+  };
+
   // Validasi penanda periode (defensif — server sudah menegakkan saat upload/PATCH,
   // tapi data lama/sudut lain harus tertangkap dengan pesan yang menyuruh membereskan).
   if (section.usesPeriodComparison) {
@@ -69,27 +84,32 @@ export async function buildAnalystSources(
           "Section ini pakai perbandingan periode, tapi ada foto tanpa penanda bulan. Lengkapi bulan tiap foto dulu.",
       };
     }
-    const months = uploads.map((u) => u.periodMonth as string);
-    if (new Set(months).size !== months.length) {
-      return {
-        ok: false,
-        error:
-          "Ada dua foto dengan bulan yang sama di section ini — satu bulan satu foto. Bereskan penanda bulannya dulu.",
-      };
-    }
-    const primaries = uploads.filter((u) => u.isPrimaryPeriod);
-    if (primaries.length !== 1) {
-      return {
-        ok: false,
-        error:
-          "Tandai TEPAT satu foto sebagai periode utama dulu (tombol \"Jadikan utama\").",
-      };
+    for (const [key, list] of byGroup) {
+      const months = list.map((u) => u.periodMonth as string);
+      if (new Set(months).size !== months.length) {
+        return {
+          ok: false,
+          error: `Ada dua foto dengan bulan yang sama di ${scopeName(key)} — satu bulan satu foto. Bereskan penanda bulannya dulu.`,
+        };
+      }
+      if (list.filter((u) => u.isPrimaryPeriod).length !== 1) {
+        return {
+          ok: false,
+          error: `Tandai TEPAT satu foto sebagai periode utama di ${scopeName(key)} dulu (tombol "Jadikan utama").`,
+        };
+      }
     }
   }
 
-  const metricByKey = new Map(section.metrics.map((m) => [m.key, m]));
+  // Metrik dicari BER-SCOPE: "penjualan" milik Flash Sale dan milik Voucher adalah dua
+  // entitas berbeda dengan label & tipe sendiri (Fase 1).
+  const metricByScoped = new Map(
+    section.metrics.map((m) => [scopedMetricKey(m.subGroupKey, m.key), m])
+  );
   const sources: AnalystSource[] = uploads.map((u, i) => ({
     sourceIndex: i + 1,
+    // Label sub-grup jadi bagian identitas sumber, supaya Analyst tahu foto ini tool mana.
+    ...(groupLabel.get(u.subGroupKey) ? { subGroupLabel: groupLabel.get(u.subGroupKey) } : {}),
     ...(section.usesPeriodComparison
       ? {
           periodLabel: formatMonthID(u.periodMonth as string),
@@ -100,14 +120,18 @@ export async function buildAnalystSources(
       .slice()
       .sort((a, b) => a.key.localeCompare(b.key))
       .map((e) => {
-        const meta = metricByKey.get(e.key);
+        const meta = metricByScoped.get(scopedMetricKey(u.subGroupKey, e.key));
         const type = meta?.type ?? "number";
         // Metrik TEKS: nilainya tinggal di rawText; value/valueText dipaksa null supaya
         // tidak pernah masuk aritmetika (perbandingan periode) maupun kosakata bold.
         const isText = type === "text";
         return {
-          key: e.key,
-          label: meta?.label ?? e.key,
+          // Kunci ber-scope: dipakai perbandingan periode supaya "penjualan" Flash Sale
+          // tak pernah dibandingkan dengan "penjualan" Voucher.
+          key: scopedMetricKey(u.subGroupKey, e.key),
+          // Nama LENGKAP ber-prefix ("Flash Sale — Penjualan") dipakai Analyst, Validator,
+          // dan PPT. Tanpa sub-grup: nama metrik apa adanya, persis seperti sebelumnya.
+          label: displayMetricName(groupLabel.get(u.subGroupKey) ?? null, meta?.label ?? e.key),
           type,
           value: isText ? null : e.value,
           valueText: isText || e.value === null ? null : abbreviateNumberID(e.value, type),
@@ -131,19 +155,31 @@ export async function buildAnalystSources(
   // changeText masuk kosakata bold — persen di poin ikut ter-bold, splitter tak berubah.
   let periodComparison: PeriodComparisonData | null = null;
   if (section.usesPeriodComparison) {
-    const periods: PeriodData[] = uploads.map((u, i) => ({
-      month: u.periodMonth as string,
-      metrics: sources[i].metrics.map((m) => ({
-        key: m.key,
-        label: m.label,
-        type: m.type,
-        value: m.value,
-        valueText: m.valueText,
-      })),
-    }));
-    const changes = computeChainedChanges(periods);
+    // Rantai perbandingan dihitung PER SUB-GRUP lalu digabung. Kalau seluruh foto section
+    // dirantai jadi satu, dua tool yang difoto pada bulan yang sama tampak sebagai dua
+    // "periode" berbeda dan persennya jadi ngawur.
+    const changes: PeriodChange[] = [];
+    for (const [key, list] of byGroup) {
+      const periods: PeriodData[] = list.map((u) => {
+        const src = sources[uploads.indexOf(u)];
+        return {
+          month: u.periodMonth as string,
+          metrics: src.metrics.map((m) => ({
+            key: m.key,
+            label: m.label,
+            type: m.type,
+            value: m.value,
+            valueText: m.valueText,
+          })),
+        };
+      });
+      void key;
+      changes.push(...computeChainedChanges(periods));
+    }
     numbers.push(...new Set(changes.map((c) => c.changeText)));
     periodComparison = {
+      // Periode utama = milik sub-grup pertama; semua sub-grup dalam satu section
+      // dilaporkan untuk bulan yang sama, jadi fokus ceritanya tetap satu.
       primaryMonth: uploads.find((u) => u.isPrimaryPeriod)!.periodMonth as string,
       changes,
     };

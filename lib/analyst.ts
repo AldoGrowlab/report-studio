@@ -76,6 +76,8 @@ export type AnalystSource = {
   sourceIndex: number;
   periodLabel?: string; // "Juni 2026" — hanya section ber-perbandingan
   isPrimary?: boolean; // periode utama (fokus cerita)
+  // Fase 1 — tool yang difoto ("Flash Sale"). Absen = section tanpa sub-grup.
+  subGroupLabel?: string;
   metrics: AnalystMetric[];
 };
 
@@ -210,9 +212,16 @@ function renderSources(sources: AnalystSource[], multiSource: boolean): string {
   return sources
     .map((s) => {
       const lines = renderMetricLines(s.metrics);
-      if (s.periodLabel) {
-        return `Bulan ${s.periodLabel}${s.isPrimary ? " (PERIODE UTAMA)" : ""}:\n${lines}`;
-      }
+      // Sub-grup mendahului bulan: yang membedakan foto-foto section ini PERTAMA-TAMA
+      // adalah toolnya, baru periodenya.
+      const head = s.subGroupLabel
+        ? s.periodLabel
+          ? `${s.subGroupLabel} — Bulan ${s.periodLabel}${s.isPrimary ? " (PERIODE UTAMA)" : ""}`
+          : s.subGroupLabel
+        : s.periodLabel
+          ? `Bulan ${s.periodLabel}${s.isPrimary ? " (PERIODE UTAMA)" : ""}`
+          : null;
+      if (head) return `${head}:\n${lines}`;
       return multiSource ? `Sumber #${s.sourceIndex}:\n${lines}` : lines;
     })
     .join("\n\n");
@@ -338,11 +347,13 @@ function analyzeWithStub(input: AnalystInput): string[] {
           }`
       )
       .join(", ");
-    const label = s.periodLabel
-      ? ` ${s.periodLabel}${s.isPrimary ? " (utama)" : ""}:`
-      : multiSource
-        ? ` Sumber #${s.sourceIndex}:`
-        : "";
+    const label = s.subGroupLabel
+      ? ` ${s.subGroupLabel}${s.periodLabel ? ` ${s.periodLabel}` : ""}:`
+      : s.periodLabel
+        ? ` ${s.periodLabel}${s.isPrimary ? " (utama)" : ""}:`
+        : multiSource
+          ? ` Sumber #${s.sourceIndex}:`
+          : "";
     return `[DEV STUB]${label} ${nums}.`;
   });
   const firstMetric = input.sources[0]?.metrics[0];

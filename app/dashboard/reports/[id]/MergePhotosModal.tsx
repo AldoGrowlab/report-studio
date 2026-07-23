@@ -17,6 +17,7 @@ import {
   type PhotoSuggestion,
 } from "@/lib/merge-suggest";
 import { MAX_UPLOAD_BYTES } from "@/lib/reports";
+import { matchSubGroup } from "@/lib/subgroups";
 
 // Gabung Foto (Jul 2026) — PRA-PROSES DI CLIENT. Beberapa potongan screenshot dari satu
 // tampilan digabung jadi SATU file, lalu masuk ke antrean unggah yang SUDAH ADA. Tidak ada
@@ -24,11 +25,14 @@ import { MAX_UPLOAD_BYTES } from "@/lib/reports";
 // Irisan dibuang operator lewat crop interaktif — BUKAN deteksi otomatis berbasis konten
 // (screenshot berulang tidak identik piksel; lihat lib/merge-images.ts & docs/DESIGN.md).
 
+type SubGroupOption = { key: string; label: string; aliases: string[] };
+
 type SectionOption = {
   id: string;
   name: string;
   platform: "shopee" | "tiktok";
   usesPeriodComparison: boolean;
+  subGroups: SubGroupOption[];
 };
 
 type Item = {
@@ -39,6 +43,8 @@ type Item = {
   width: number;
   height: number;
   trim: Trim;
+  // Sub-grup hasil baca tab foto ini (Fase 1c). null = tak terbaca/tak cocok.
+  detectedSubGroup: string | null;
 };
 
 // Preset per section, MURNI di localStorage (tanpa penyimpanan server): supaya potongan
@@ -49,11 +55,16 @@ type MergePreset = {
   trims: Trim[];
 };
 
-const presetKey = (sectionId: string) => `mergePreset:${sectionId}`;
+// Preset di-key per section + SUB-GRUP (Fase 1c): potongan Flash Sale dan potongan
+// Voucher berbeda, jadi presetnya pun tak boleh saling menimpa. Section tanpa sub-grup
+// tetap memakai key LAMA persis — preset yang sudah tersimpan di browser operator tetap
+// terbaca, tanpa migrasi paksa localStorage.
+const presetKey = (sectionId: string, subGroupKey: string) =>
+  subGroupKey ? `mergePreset:${sectionId}:${subGroupKey}` : `mergePreset:${sectionId}`;
 
-function readPreset(sectionId: string): MergePreset | null {
+function readPreset(sectionId: string, subGroupKey: string): MergePreset | null {
   try {
-    const raw = window.localStorage.getItem(presetKey(sectionId));
+    const raw = window.localStorage.getItem(presetKey(sectionId, subGroupKey));
     if (!raw) return null;
     const p = JSON.parse(raw) as MergePreset;
     if (
@@ -71,17 +82,17 @@ function readPreset(sectionId: string): MergePreset | null {
   }
 }
 
-function writePreset(sectionId: string, preset: MergePreset) {
+function writePreset(sectionId: string, subGroupKey: string, preset: MergePreset) {
   try {
-    window.localStorage.setItem(presetKey(sectionId), JSON.stringify(preset));
+    window.localStorage.setItem(presetKey(sectionId, subGroupKey), JSON.stringify(preset));
   } catch {
     /* diamkan — kegagalan preset tidak boleh menggagalkan penggabungan */
   }
 }
 
-function clearPreset(sectionId: string) {
+function clearPreset(sectionId: string, subGroupKey: string) {
   try {
-    window.localStorage.removeItem(presetKey(sectionId));
+    window.localStorage.removeItem(presetKey(sectionId, subGroupKey));
   } catch {
     /* idem */
   }
@@ -106,10 +117,13 @@ export default function MergePhotosModal({
   sections: SectionOption[];
   multiPlatform: boolean;
   onClose: () => void;
-  onMerged: (file: File, sectionId: string) => void;
+  onMerged: (file: File, sectionId: string, subGroupKey?: string) => void;
 }) {
   const [items, setItems] = useState<Item[]>([]);
   const [sectionId, setSectionId] = useState("");
+  // Fase 1c — sub-grup hasil gabungan. Semua potongan WAJIB dari tool yang sama.
+  const [subGroupKey, setSubGroupKey] = useState("");
+  const [mixError, setMixError] = useState("");
   const [direction, setDirection] = useState<MergeDirection>("vertical");
   const [autoDetected, setAutoDetected] = useState(false);
   const [presetApplied, setPresetApplied] = useState(false);
@@ -157,7 +171,7 @@ export default function MergePhotosModal({
       markPresetApplied(false);
       return;
     }
-    const preset = readPreset(nextSectionId);
+    const preset = readPreset(nextSectionId, subGroupKey);
     if (!preset || preset.count !== list.length) {
       markPresetApplied(false);
       return;
@@ -172,13 +186,24 @@ export default function MergePhotosModal({
     markPresetApplied(true);
   }
 
+  const groupsOf = (id: string) => sections.find((s) => s.id === id)?.subGroups ?? [];
+
   function pickSection(nextSectionId: string) {
     setSectionId(nextSectionId);
+    // Ganti section = daftar sub-grup berganti; pilihan & preset lama tak lagi berlaku.
+    setSubGroupKey("");
+    setMixError("");
     applyPreset(nextSectionId, itemsRef.current);
   }
 
+  function pickSubGroup(next: string) {
+    setSubGroupKey(next);
+    setMixError("");
+    applyPreset(sectionId, itemsRef.current);
+  }
+
   function resetPreset() {
-    if (sectionId) clearPreset(sectionId);
+    if (sectionId) clearPreset(sectionId, subGroupKey);
     markPresetApplied(false);
     setAi(null);
     setAiError("");
@@ -210,6 +235,7 @@ export default function MergePhotosModal({
       width: 0,
       height: 0,
       trim: { ...NO_TRIM },
+      detectedSubGroup: null,
     }));
     const next = [...prev, ...added];
     // Daftar foto berubah -> saran lama tidak lagi berlaku untuk susunan ini.
@@ -218,6 +244,7 @@ export default function MergePhotosModal({
     commitItems(next);
     applyPreset(sectionId, next);
     for (const it of added) loadImage(it);
+    for (const it of added) void detectSubGroupFor(it);
   }
 
   // Muat dimensi asli. onload adalah callback dari sistem LUAR (dekode gambar), jadi di
@@ -242,6 +269,47 @@ export default function MergePhotosModal({
     img.onerror = () => setSaveError(`Gambar "${item.file.name}" tidak bisa dibaca.`);
     img.src = item.url;
   }
+
+  // Baca tab tiap potongan lalu TOLAK campuran (Fase 1c): menggabung Flash Sale dengan
+  // Voucher menghasilkan satu foto yang angkanya milik dua tool — ekstraksi ber-scope
+  // tidak punya cara memisahkannya lagi.
+  async function detectSubGroupFor(item: Item) {
+    const groups = groupsOf(sectionId);
+    try {
+      const photo = await toAnalysisBase64({ ...item, img: await loadOnce(item.url) });
+      if (!photo) return;
+      const res = await fetch("/api/period-detect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photo }),
+      });
+      if (!res.ok) return;
+      const data = await res.json().catch(() => ({}));
+      const matched = matchSubGroup(
+        typeof data.tabLabel === "string" ? data.tabLabel : null,
+        groups.length > 0 ? groups : sections.flatMap((sec) => sec.subGroups)
+      );
+      if (!matched) return;
+      commitItems(
+        itemsRef.current.map((p) => (p.localId === item.localId ? { ...p, detectedSubGroup: matched } : p))
+      );
+    } catch {
+      /* diam — operator memilih sub-grup manual */
+    }
+  }
+
+  function loadOnce(url: string): Promise<HTMLImageElement | null> {
+    return new Promise((resolve) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => resolve(null);
+      i.src = url;
+    });
+  }
+
+  // Campuran = ada DUA sub-grup berbeda yang terbaca di antara potongan terpilih.
+  const detectedGroups = [...new Set(items.map((i) => i.detectedSubGroup).filter(Boolean))] as string[];
+  const mixed = detectedGroups.length > 1;
 
   const loaded = items.length > 0 && items.every((it) => it.img !== null);
 
@@ -422,6 +490,19 @@ export default function MergePhotosModal({
       setSaveError("Pilih label section dulu.");
       return;
     }
+    const groups = groupsOf(sectionId);
+    if (groups.length > 0 && !subGroupKey) {
+      setSaveError(`Section ini punya sub-grup — pilih dulu tool mana yang digabung.`);
+      return;
+    }
+    if (mixed) {
+      setSaveError(
+        `Potongan yang dipilih berasal dari sub-grup BERBEDA (${detectedGroups
+          .map((k) => groups.find((g) => g.key === k)?.label ?? k)
+          .join(", ")}). Gabungkan hanya potongan dari tool yang sama.`
+      );
+      return;
+    }
     setSaving(true);
     setSaveError("");
     try {
@@ -452,14 +533,15 @@ export default function MergePhotosModal({
       }
 
       const file = new File([blob], `gabungan_${Date.now()}.${ext}`, { type });
-      writePreset(sectionId, {
+      writePreset(sectionId, subGroupKey, {
         direction,
         count: items.length,
         trims: items.map((it) => ({ ...it.trim })),
       });
       for (const it of items) URL.revokeObjectURL(it.url);
       itemsRef.current = [];
-      onMerged(file, sectionId);
+      // Hasil gabungan MEWARISI label sub-grup sumbernya.
+      onMerged(file, sectionId, subGroupKey || undefined);
     } catch {
       setSaveError("Gagal menyusun hasil gabungan.");
     } finally {
@@ -501,6 +583,16 @@ export default function MergePhotosModal({
               </option>
             ))}
           </select>
+          {groupsOf(sectionId).length > 0 && (
+            <select value={subGroupKey} onChange={(e) => pickSubGroup(e.target.value)} className="select">
+              <option value="">— sub-grup —</option>
+              {groupsOf(sectionId).map((g) => (
+                <option key={g.key} value={g.key}>
+                  {g.label}
+                </option>
+              ))}
+            </select>
+          )}
           <label className="inline-block">
             <span className="btn-ghost cursor-pointer px-3 py-1.5 text-xs">
               Pilih potongan…
@@ -611,6 +703,17 @@ export default function MergePhotosModal({
           )}
         </div>
 
+        {mixed && (
+          <p className="mt-3 rounded-[10px] border border-danger/25 bg-danger/10 px-3 py-2 text-xs text-danger">
+            Potongan yang dipilih berasal dari sub-grup BERBEDA (
+            {detectedGroups
+              .map((k) => groupsOf(sectionId).find((g) => g.key === k)?.label ?? k)
+              .join(", ")}
+            ). Gabungkan hanya potongan dari tool yang sama — hasil gabungan menyimpan angka
+            satu tool saja.
+          </p>
+        )}
+        {mixError && <p className="mt-2 text-xs text-danger">{mixError}</p>}
         {saveError && <p className="mt-3 text-xs text-danger">{saveError}</p>}
 
         <div className="mt-4 flex justify-end gap-2">
@@ -619,7 +722,7 @@ export default function MergePhotosModal({
           </button>
           <button
             onClick={saveMerged}
-            disabled={!previewReady || saving || !sectionId}
+            disabled={!previewReady || saving || !sectionId || mixed}
             className="btn-primary px-3 py-1.5 text-xs"
           >
             {saving ? "Menyusun…" : "Gabungkan & tambahkan"}

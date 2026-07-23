@@ -129,7 +129,7 @@ export default async function ReportDetailPage({
 
   const flags = await prisma.flag.findMany({
     // Jul 2026: flag "periode" (screenshot salah bulan) tampil di panel yang sama.
-    where: { reportId: id, type: { in: ["inkonsistensi", "periode"] } },
+    where: { reportId: id, type: { in: ["inkonsistensi", "periode", "kelengkapan"] } },
     orderBy: { createdAt: "desc" },
     select: { id: true, platform: true, section: true, note: true, type: true, severity: true, createdAt: true },
   });

@@ -5,6 +5,7 @@ import { getSession } from "@/lib/session";
 import { canAccessReport } from "@/lib/reports";
 import { reviseInsight } from "@/lib/analyst";
 import { buildAnalystSources } from "@/lib/insight-source";
+import { checkCompleteness } from "@/lib/completeness";
 import {
   checkConsistency,
   generateConclusion,
@@ -199,6 +200,55 @@ export async function POST(
     savedRevisions.push({ ...row, sectionId: rev.sectionId });
   }
 
+  // ---- Validator KELENGKAPAN (Fase 1c) — murni kode, tanpa model ----
+  // Dijalankan per SECTION berfoto platform ini, atas GABUNGAN foto tiap sub-grup.
+  // Sub-grup ber-KB tanpa foto = catatan info "tidak ada aktivitas", BUKAN error:
+  // daftar tool yang aktif beda tiap klien dan tiap bulan.
+  const sectionsWithPhotos = await prisma.section.findMany({
+    where: { platform, uploads: { some: { reportId } } },
+    include: {
+      metrics: true,
+      subGroups: { orderBy: { order: "asc" } },
+      uploads: { where: { reportId }, include: { extractions: true } },
+    },
+  });
+  await prisma.flag.deleteMany({ where: { reportId, platform, type: "kelengkapan" } });
+  const completenessFlags = [];
+  for (const sec of sectionsWithPhotos) {
+    const findings = checkCompleteness({
+      sectionName: sec.name,
+      subGroups: sec.subGroups.map((g) => ({ key: g.key, label: g.label })),
+      metrics: sec.metrics.map((m) => ({
+        subGroupKey: m.subGroupKey,
+        key: m.key,
+        label: m.label,
+        required: m.required,
+      })),
+      photos: sec.uploads.map((u) => ({
+        subGroupKey: u.subGroupKey,
+        extractions: u.extractions.map((e) => ({
+          key: e.key,
+          status: e.status,
+          manuallyConfirmed: e.manuallyConfirmed,
+        })),
+      })),
+    });
+    for (const f of findings) {
+      completenessFlags.push(
+        await prisma.flag.create({
+          data: {
+            reportId,
+            platform,
+            section: sec.name,
+            type: "kelengkapan",
+            severity: f.severity,
+            note: f.note,
+          },
+        })
+      );
+    }
+  }
+
   // Flag = keadaan run TERAKHIR: hapus flag inkonsistensi lama (report, platform) ini,
   // tulis yang tersisa sekarang. Severity "info" — inkonsistensi narasi, bukan presisi angka.
   await prisma.flag.deleteMany({
@@ -293,7 +343,7 @@ export async function POST(
     generator: outcome.generator,
     insights: revisedInsights,
     revisions: savedRevisions,
-    flags,
+    flags: [...completenessFlags, ...flags],
     consistency: {
       issuesFound: issuesFound.length,
       revised: savedRevisions.length,
