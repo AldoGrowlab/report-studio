@@ -3,6 +3,9 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
+// Sentinel sub-grup tunggal implisit — di form diwakili string kosong ("tanpa sub-grup").
+const DEFAULT_SUB_GROUP = "_default";
+
 type Platform = "shopee" | "tiktok";
 type MetricType = "number" | "currency" | "percent" | "ratio" | "duration" | "text";
 
@@ -28,6 +31,34 @@ type GroupForm = {
   metrics: MetricRow[];
 };
 
+// Baris DerivedMetric apa adanya dari API (ref sudah pecah jadi kolom eksplisit).
+type DerivedRow = {
+  key: string;
+  label: string;
+  subGroupKey: string;
+  notes: string | null;
+  numeratorSection: string;
+  numeratorSubGroupKey: string;
+  numeratorMetricKey: string;
+  denominatorSection: string;
+  denominatorSubGroupKey: string;
+  denominatorMetricKey: string;
+};
+
+// Ref di FORM. Platform SENGAJA tidak ada: operan wajib se-platform dengan section
+// pemiliknya (server menolak lintas platform), jadi menyediakan pilihannya cuma membuka
+// satu kelas kesalahan yang sebenarnya bisa dibuat mustahil.
+type RefForm = { section: string; subGroupKey: string; metricKey: string };
+
+type DerivedForm = {
+  key: string;
+  label: string;
+  subGroupKey: string;
+  numerator: RefForm;
+  denominator: RefForm;
+  notes: string;
+};
+
 type SectionRow = {
   id: string;
   platform: Platform;
@@ -38,6 +69,7 @@ type SectionRow = {
   usesPeriodComparison: boolean;
   metrics: (MetricRow & { subGroupKey?: string })[];
   subGroups?: SubGroupRow[];
+  derived?: DerivedRow[];
 };
 
 const METRIC_TYPES: { value: MetricType; label: string }[] = [
@@ -58,6 +90,16 @@ function emptyMetric(): MetricRow {
 function emptyGroup(): GroupForm {
   return { key: "", label: "", aliasesText: "", metrics: [emptyMetric()] };
 }
+
+const emptyRef = (): RefForm => ({ section: "", subGroupKey: "", metricKey: "" });
+const emptyDerived = (): DerivedForm => ({
+  key: "",
+  label: "",
+  subGroupKey: "",
+  numerator: emptyRef(),
+  denominator: emptyRef(),
+  notes: "",
+});
 
 const filled = (rows: MetricRow[]) => rows.filter((m) => m.key.trim() && m.label.trim());
 const splitAliases = (text: string) =>
@@ -80,6 +122,8 @@ export default function SectionsPage() {
   // Sub-grup (Fase 1). KOSONG = section biasa, perilaku persis seperti sebelumnya.
   // Terisi = seluruh metrik WAJIB berada di dalam sub-grup (server menolak campuran).
   const [subGroups, setSubGroups] = useState<GroupForm[]>([]);
+  // Fase 2 — metrik turunan (kode menghitung, AI mengutip).
+  const [derived, setDerived] = useState<DerivedForm[]>([]);
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -97,6 +141,72 @@ export default function SectionsPage() {
     : filledMetrics.length;
   const willBeActive =
     name.trim().length > 0 && kbAnalysis.trim().length > 0 && totalFilledMetrics >= 1;
+
+  // ---- Katalog untuk PICKER metrik turunan ----
+  // Isi dropdown datang dari KB, bukan ketikan bebas: salah eja jadi MUSTAHIL sejak input,
+  // dan validasi fail-fast di server tinggal jadi lapisan kedua.
+  //
+  // Section yang sedang disunting diambil dari FORM, bukan dari data tersimpan — supaya
+  // metrik/sub-grup yang baru diketik di layar ini langsung bisa dirujuk pada simpan
+  // pertama. Ini cerminan persis cara server menyusun katalognya saat memvalidasi.
+  const currentMetrics: { key: string; label: string; subGroupKey: string; type: MetricType }[] =
+    usingSubGroups
+      ? subGroups.flatMap((g) =>
+          filled(g.metrics).map((m) => ({ ...m, subGroupKey: g.key.trim() }))
+        )
+      : filledMetrics.map((m) => ({ ...m, subGroupKey: "" }));
+
+  const catalog = [
+    ...sections
+      .filter((s) => s.platform === platform && !(editingId && s.id === editingId))
+      .map((s) => ({
+        name: s.name,
+        subGroups: (s.subGroups ?? []).map((g) => ({ key: g.key, label: g.label })),
+        metrics: (s.metrics ?? []).map((m) => ({
+          key: m.key,
+          label: m.label,
+          type: m.type,
+          subGroupKey: m.subGroupKey === DEFAULT_SUB_GROUP ? "" : (m.subGroupKey ?? ""),
+        })),
+      })),
+    ...(name.trim()
+      ? [
+          {
+            name: name.trim(),
+            subGroups: subGroups.map((g) => ({ key: g.key.trim(), label: g.label.trim() || g.key.trim() })),
+            metrics: currentMetrics,
+          },
+        ]
+      : []),
+  ].filter((s) => s.name);
+
+  const catalogSection = (sectionName: string) => catalog.find((s) => s.name === sectionName);
+  // Metrik TEKS tidak ditawarkan sama sekali — nama produk tak bisa dibagi.
+  const metricsFor = (sectionName: string, subGroupKey: string) =>
+    (catalogSection(sectionName)?.metrics ?? []).filter(
+      (m) => m.subGroupKey === subGroupKey && m.type !== "text"
+    );
+
+  function updateDerived(i: number, patch: Partial<DerivedForm>) {
+    setDerived((prev) => prev.map((d, j) => (j === i ? { ...d, ...patch } : d)));
+  }
+  function updateDerivedRef(i: number, side: "numerator" | "denominator", patch: Partial<RefForm>) {
+    setDerived((prev) =>
+      prev.map((d, j) => {
+        if (j !== i) return d;
+        const next = { ...d[side], ...patch };
+        // Ganti section/sub-grup membatalkan pilihan di bawahnya: metriknya milik scope
+        // lain, dan membiarkannya menghasilkan ref yang tampak terisi padahal salah.
+        if (patch.section !== undefined) {
+          next.subGroupKey = "";
+          next.metricKey = "";
+        } else if (patch.subGroupKey !== undefined) {
+          next.metricKey = "";
+        }
+        return { ...d, [side]: next };
+      })
+    );
+  }
 
   // Refresh dari handler (simpan/hapus) — call site menyetel loading dulu.
   async function loadSections() {
@@ -135,6 +245,7 @@ export default function SectionsPage() {
     setUsesPeriodComparison(false);
     setMetrics([emptyMetric()]);
     setSubGroups([]);
+    setDerived([]);
     setError("");
     setSuccess("");
   }
@@ -168,6 +279,24 @@ export default function SectionsPage() {
       setSubGroups([]);
       setMetrics(s.metrics.length ? s.metrics.map((m) => ({ ...m })) : [emptyMetric()]);
     }
+    setDerived(
+      (s.derived ?? []).map((d) => ({
+        key: d.key,
+        label: d.label,
+        subGroupKey: d.subGroupKey === DEFAULT_SUB_GROUP ? "" : d.subGroupKey,
+        numerator: {
+          section: d.numeratorSection,
+          subGroupKey: d.numeratorSubGroupKey === DEFAULT_SUB_GROUP ? "" : d.numeratorSubGroupKey,
+          metricKey: d.numeratorMetricKey,
+        },
+        denominator: {
+          section: d.denominatorSection,
+          subGroupKey: d.denominatorSubGroupKey === DEFAULT_SUB_GROUP ? "" : d.denominatorSubGroupKey,
+          metricKey: d.denominatorMetricKey,
+        },
+        notes: d.notes ?? "",
+      }))
+    );
     setError("");
     setSuccess("");
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -250,6 +379,35 @@ export default function SectionsPage() {
             })),
           }
         : { metrics: filledMetrics }),
+      // Baris yang belum lengkap dibuang di sini, bukan dikirim lalu ditolak server.
+      derivedMetrics: derived
+        .filter(
+          (d) =>
+            d.key.trim() &&
+            d.label.trim() &&
+            d.numerator.section &&
+            d.numerator.metricKey &&
+            d.denominator.section &&
+            d.denominator.metricKey
+        )
+        .map((d) => ({
+          key: d.key.trim(),
+          label: d.label.trim(),
+          subGroupKey: d.subGroupKey || DEFAULT_SUB_GROUP,
+          numeratorRef: {
+            platform,
+            section: d.numerator.section,
+            subGroupKey: d.numerator.subGroupKey || DEFAULT_SUB_GROUP,
+            metricKey: d.numerator.metricKey,
+          },
+          denominatorRef: {
+            platform,
+            section: d.denominator.section,
+            subGroupKey: d.denominator.subGroupKey || DEFAULT_SUB_GROUP,
+            metricKey: d.denominator.metricKey,
+          },
+          notes: d.notes.trim(),
+        })),
     };
 
     try {
@@ -528,6 +686,127 @@ export default function SectionsPage() {
             )}
           </div>
 
+
+          {/* ---- Metrik turunan (Fase 2) — kode menghitung, AI mengutip ---- */}
+          <div className="mt-6">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="label-sm">Metrik turunan</label>
+              <button
+                onClick={() => setDerived((prev) => [...prev, emptyDerived()])}
+                className="text-xs text-accent transition-colors hover:text-accent-hi"
+              >
+                + Tambah metrik turunan
+              </button>
+            </div>
+            <p className="mt-1 text-[11px] text-fg-3">
+              Dihitung KODE sebagai pembilang ÷ penyebut × 100, lalu dikutip apa adanya oleh
+              Analyst. Operan dipilih dari KB — wajib se-platform dengan section ini.
+            </p>
+            {derived.length === 0 ? (
+              <p className="mt-2 text-xs text-fg-3">Belum ada metrik turunan.</p>
+            ) : (
+              <div className="mt-2 space-y-3">
+                {derived.map((d, i) => (
+                  <div key={i} className="rounded-[10px] border border-line-2 bg-ink p-3">
+                    <div className="grid grid-cols-12 items-center gap-2">
+                      <input
+                        type="text"
+                        value={d.key}
+                        onChange={(e) => updateDerived(i, { key: e.target.value })}
+                        className="input col-span-3 px-2 py-1.5 text-xs"
+                        placeholder="key (mis. kontribusi_flash_sale)"
+                      />
+                      <input
+                        type="text"
+                        value={d.label}
+                        onChange={(e) => updateDerived(i, { label: e.target.value })}
+                        className="input col-span-5 px-2 py-1.5 text-xs"
+                        placeholder="Label (mis. Kontribusi Flash Sale terhadap GMV)"
+                      />
+                      <select
+                        value={d.subGroupKey}
+                        onChange={(e) => updateDerived(i, { subGroupKey: e.target.value })}
+                        title="Sub-grup pemilik — tempat metrik ini tampil"
+                        className="select col-span-3 px-2 py-1.5 text-xs"
+                        disabled={!usingSubGroups}
+                      >
+                        <option value="">— tanpa sub-grup —</option>
+                        {subGroups.map((g) => (
+                          <option key={g.key} value={g.key.trim()}>
+                            {g.label.trim() || g.key.trim()}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => setDerived((prev) => prev.filter((_, j) => j !== i))}
+                        className="col-span-1 text-fg-3 hover:text-danger"
+                        title="Hapus metrik turunan"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    {(["numerator", "denominator"] as const).map((side) => {
+                      const ref = d[side];
+                      const groups = catalogSection(ref.section)?.subGroups ?? [];
+                      return (
+                        <div key={side} className="mt-2 grid grid-cols-12 items-center gap-2">
+                          <span className="col-span-2 text-[11px] text-fg-3">
+                            {side === "numerator" ? "Pembilang" : "Penyebut"}
+                          </span>
+                          <select
+                            value={ref.section}
+                            onChange={(e) => updateDerivedRef(i, side, { section: e.target.value })}
+                            className="select col-span-4 px-2 py-1.5 text-xs"
+                          >
+                            <option value="">— section —</option>
+                            {catalog.map((s) => (
+                              <option key={s.name} value={s.name}>
+                                {s.name}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            value={ref.subGroupKey}
+                            onChange={(e) => updateDerivedRef(i, side, { subGroupKey: e.target.value })}
+                            className="select col-span-3 px-2 py-1.5 text-xs"
+                            disabled={groups.length === 0}
+                          >
+                            <option value="">— tanpa sub-grup —</option>
+                            {groups.map((g) => (
+                              <option key={g.key} value={g.key}>
+                                {g.label}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            value={ref.metricKey}
+                            onChange={(e) => updateDerivedRef(i, side, { metricKey: e.target.value })}
+                            className="select col-span-3 px-2 py-1.5 text-xs"
+                            disabled={!ref.section}
+                          >
+                            <option value="">— metrik —</option>
+                            {metricsFor(ref.section, ref.subGroupKey).map((m) => (
+                              <option key={m.key} value={m.key}>
+                                {m.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      );
+                    })}
+                    <input
+                      type="text"
+                      value={d.notes}
+                      onChange={(e) => updateDerived(i, { notes: e.target.value })}
+                      className="input mt-2 w-full px-2 py-1.5 text-xs"
+                      placeholder="catatan (opsional)"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {error && <p className="mt-3 text-sm text-danger">{error}</p>}
           {success && <p className="mt-3 text-sm text-ok">{success}</p>}
 
@@ -600,6 +879,20 @@ export default function SectionsPage() {
                       </p>
                       {/* Sub-grup (Fase 1): fotonya terpisah per tool, jadi founder perlu
                           melihat sekilas section mana yang berperilaku begitu. */}
+                      {(s.derived?.length ?? 0) > 0 && (
+                        <p className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-fg-3">
+                          <span>{s.derived!.length} turunan:</span>
+                          {s.derived!.map((d) => (
+                            <span
+                              key={d.key}
+                              title={`${d.numeratorSection} / ${d.numeratorMetricKey} ÷ ${d.denominatorSection} / ${d.denominatorMetricKey}`}
+                              className="badge bg-ok/15 px-1.5 text-[10px] text-ok"
+                            >
+                              {d.label}
+                            </span>
+                          ))}
+                        </p>
+                      )}
                       {(s.subGroups?.length ?? 0) > 0 && (
                         <p className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-fg-3">
                           <span>{s.subGroups!.length} sub-grup:</span>
