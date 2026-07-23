@@ -1518,6 +1518,19 @@ export default function UploadManager({
                             Periode utama
                           </span>
                         )}
+                        {/* Poin 2c — anomali: foto berlabel bulan DI LUAR pasangan report
+                            (mis. pasangan diedit setelah foto diberi label). Diperingatkan,
+                            TIDAK dipetakan ulang diam-diam — operator memindahkannya sendiri. */}
+                        {u.periodMonth &&
+                          monthOpts.length > 0 &&
+                          !monthOpts.some((m) => m.value === u.periodMonth) && (
+                            <span
+                              title="Bulan foto ini di luar pasangan periode report. Pindahkan ke salah satu bulan pasangan."
+                              className="badge bg-warn/15 px-2 text-[10px] text-warn"
+                            >
+                              ⚠ di luar periode report
+                            </span>
+                          )}
                       </div>
                     )}
 

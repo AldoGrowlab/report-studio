@@ -40,7 +40,9 @@
       "Bash(git commit *)",
       "Bash(SEED_ADMIN_PASSWORD=\"pendek\" npx tsx --env-file=.env prisma/seed.ts)",
       "Bash(SEED_ADMIN_PASSWORD=\"uji-panjang-cukup-12\" npx tsx --env-file=.env prisma/seed.ts)",
-      "Bash(python3 -c \"import json;d=json.load\\(open\\('package.json'\\)\\);print\\('scripts:',json.dumps\\(d.get\\('scripts'\\),indent=1\\)\\);print\\('prisma:',json.dumps\\(d.get\\('prisma'\\),indent=1\\)\\)\")"
+      "Bash(python3 -c \"import json;d=json.load\\(open\\('package.json'\\)\\);print\\('scripts:',json.dumps\\(d.get\\('scripts'\\),indent=1\\)\\);print\\('prisma:',json.dumps\\(d.get\\('prisma'\\),indent=1\\)\\)\")",
+      "Bash(sed -i '' 's/isPrimaryPeriod/isPrimary/g' lib/derived-resolve.ts lib/derived-resolve.test.ts)",
+      "Bash(sed -i '' 's/isPrimaryPeriod: isPrimaryMonth/isPrimary: isPrimaryMonth/' lib/derived-compute.ts)"
     ]
   }
 }

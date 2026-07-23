@@ -10,7 +10,7 @@ import { periodMonthOptions } from "@/lib/report-period";
 import { DEFAULT_SUB_GROUP_KEY } from "@/lib/subgroups";
 
 // POST — upload satu screenshot + label section (satu foto satu label).
-// Body: multipart/form-data { file, sectionId, subGroupKey?, periodMonth?, isPrimaryPeriod? }
+// Body: multipart/form-data { file, sectionId, subGroupKey?, periodMonth? }
 // subGroupKey WAJIB untuk section ber-sub-grup (Fase 1); untuk section biasa diabaikan
 // (jatuh ke sentinel "_default").
 // periodMonth ("YYYY-MM") WAJIB untuk section ber-perbandingan-periode, dan HARUS salah

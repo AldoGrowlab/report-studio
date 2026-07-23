@@ -6,7 +6,7 @@ import { computeRatioPercent, formatRef, type MetricRef } from "@/lib/derived";
 
 export type OperandPhoto = {
   // Foto yang menjadi kandidat sumber nilai operan.
-  isPrimaryPeriod: boolean;
+  isPrimary: boolean;
   value: number | null;
   hasMetric: boolean; // metrik itu ADA barisnya di foto ini (walau nilainya null)
 };
@@ -32,7 +32,7 @@ export function resolveOperand(
     return { status: "menunggu", note: `menunggu ${label} — belum ada fotonya.` };
   }
 
-  const candidates = usesPeriodComparison ? photos.filter((p) => p.isPrimaryPeriod) : photos;
+  const candidates = usesPeriodComparison ? photos.filter((p) => p.isPrimary) : photos;
 
   if (usesPeriodComparison && candidates.length !== 1) {
     return {

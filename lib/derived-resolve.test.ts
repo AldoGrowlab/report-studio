@@ -5,8 +5,8 @@ import type { MetricRef } from "./derived";
 
 const REF: MetricRef = { platform: "shopee", section: "Kriteria Utama", subGroupKey: "_default", metricKey: "GMV" };
 const NUM: MetricRef = { platform: "shopee", section: "Promotion Tools", subGroupKey: "flash_sale", metricKey: "Penjualan" };
-const photo = (value: number | null, isPrimaryPeriod = false, hasMetric = true): OperandPhoto =>
-  ({ value, isPrimaryPeriod, hasMetric });
+const photo = (value: number | null, isPrimary = false, hasMetric = true): OperandPhoto =>
+  ({ value, isPrimary, hasMetric });
 
 // Catatan operan tanpa perbandingan status — `assert.equal` di node:assert/strict
 // MEMPERSEMPIT tipe, sehingga `status !== "ok"` sesudahnya jadi perbandingan redundan

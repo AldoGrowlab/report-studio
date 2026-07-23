@@ -532,8 +532,14 @@ Label sama-sama dikirim ke prompt vision** (`lib/extractor.ts`, format
 >   dibiarkan kosong; tak terbaca → manual. Autofill `periodeUtama` yang kosong terjadi
 >   SERVER saat ekstraksi (fallback lama). Semua tampilan periode lewat `displayReportPeriod`.
 >   `isPrimaryPeriod` masih ADA di DB (tak dibaca lagi) — dibuang 2c.
-> - **2c:** edit pasangan di pengaturan + konfirmasi + warning anomali (foto berlabel di luar
->   pasangan baru) + recompute; migrasi buang `isPrimaryPeriod`.
+> - **2c (SELESAI):** `Upload.isPrimaryPeriod` DIBUANG (migrasi `20260726030000`; nol pembaca
+>   kode). Editor pasangan di halaman report (`PATCH /api/reports/[id]`, dengan KONFIRMASI):
+>   mengubah pasangan menghitung ulang kontribusi turunan; foto berlabel di luar pasangan
+>   baru jadi **anomali** yang diperingatkan (⚠ di luar periode report), TIDAK dipetakan
+>   ulang diam-diam. PATCH reportPeriod teks-bebas lama DIHAPUS (ia menulis ke field filter).
+>   Saat pasangan diedit, `reportPeriod` **di-denormalisasi ulang** dari periodeUtama baru
+>   KECUALI ia label kustom (`reportPeriod` lama !== `formatMonthID(periodeUtama lama)`) —
+>   supaya filter tak menua tapi label kustom tak tertimpa.
 > - **`reportPeriod` DIPERTAHANKAN** sebagai label tampilan/filter DENORMALISASI (deprecated;
 >   diisi dari `periodeUtama` saat buat report; tak pernah dibaca untuk keputusan periode).
 >   Aturan tampilan tunggal: `formatMonthID(periodeUtama) ?? reportPeriod ??

@@ -255,12 +255,12 @@ model Upload {
   sectionId       String
   imageUrl        String
   labelConfirmed  Boolean  @default(false)
-  // Tahap 6b — HANYA untuk section ber-perbandingan-periode (selain itu null/false):
+  // Tahap 6b — HANYA untuk section ber-perbandingan-periode (selain itu null):
   // periodMonth kanonik "YYYY-MM" (urut kronologis = urut string; label "Juni 2026"
-  // hanya di render — lib/period.ts). isPrimaryPeriod ditandai EKSPLISIT user (tidak
-  // pernah otomatis), maks SATU per (report, section) — ditegakkan server.
+  // hanya di render — lib/period.ts). Poin 2 (Jul 2026): bulan foto WAJIB salah satu
+  // pasangan bulan report, dan status "periode utama" TURUNAN (bulanFoto == periodeUtama) —
+  // flag per foto dibuang di migrasi 20260726030000.
   periodMonth     String?
-  isPrimaryPeriod Boolean  @default(false)
   // Sub-grup foto ini (Fase 1). NOT NULL dengan sentinel "_default" — BUKAN nullable:
   // Postgres memperlakukan NULL sebagai saling berbeda di unique constraint, jadi kolom
   // nullable akan diam-diam mencabut proteksi duplikat section lama. Lihat lib/subgroups.ts.

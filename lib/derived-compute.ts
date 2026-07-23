@@ -61,7 +61,7 @@ export async function recomputeDerivedMetrics(reportId: string): Promise<number>
         return {
           // Status "periode utama" = TURUNAN dari pasangan report (Poin 2), bukan lagi
           // flag per foto. Guard 2b (aturan foto-periode-utama) tak berubah maknanya.
-          isPrimaryPeriod: isPrimaryMonth(pair, u.periodMonth),
+          isPrimary: isPrimaryMonth(pair, u.periodMonth),
           value: e?.value ?? null,
           hasMetric: e !== undefined,
         };

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
-import { canAccessReport, MAX_REPORT_PERIOD } from "@/lib/reports";
+import { canAccessReport } from "@/lib/reports";
+import { isValidPeriodMonth, formatMonthID } from "@/lib/period";
+import { recomputeDerivedMetrics } from "@/lib/derived-compute";
 import { getStorage } from "@/lib/storage";
 
 // DELETE — hapus report beserta seluruh isinya (Jul 2026). Founder & operator (Model B).
@@ -39,9 +41,15 @@ export async function DELETE(_request: Request, ctx: RouteContext<"/api/reports/
   return NextResponse.json({ ok: true });
 }
 
-// PATCH — ubah periode report manual (Jul 2026, Deteksi Bulan Otomatis).
-// Body: { reportPeriod: string }. Edit manual SELALU menang: periodDetected dikembalikan
-// ke false secara PERMANEN, sehingga ekstraksi berikutnya tidak pernah menimpanya lagi.
+// PATCH — ubah PASANGAN BULAN report (Poin 2c). Menggantikan editor reportPeriod teks-bebas
+// lama (dihapus: ia menulis ke field yang dipakai FILTER, jadi tak boleh tetap hidup).
+// Body: { periodeUtama: "YYYY-MM"|null, periodePembanding: "YYYY-MM"|null }.
+//
+// Efek: (1) reportPeriod di-DENORMALISASI ulang dari periodeUtama baru — KECUALI reportPeriod
+// lama adalah label kustom (bukan cermin periodeUtama lama), yang dipertahankan agar filter
+// tidak menua; (2) foto berlabel di luar pasangan baru TIDAK dipetakan ulang (jadi anomali
+// yang diperingatkan di UI); (3) metrik turunan dihitung ulang (pemilihan foto periode utama
+// berubah).
 export async function PATCH(request: Request, ctx: RouteContext<"/api/reports/[id]">) {
   const session = await getSession();
   if (!session) {
@@ -65,44 +73,54 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/reports/[i
     return NextResponse.json({ error: "Permintaan tidak valid." }, { status: 400 });
   }
   const b = (typeof body === "object" && body !== null ? body : {}) as Record<string, unknown>;
-  if (typeof b.reportPeriod !== "string") {
-    return NextResponse.json({ error: "Periode report harus berupa teks." }, { status: 400 });
-  }
-  const reportPeriod = b.reportPeriod.trim();
-  // Batas SAMA dengan saat pembuatan report (periode ikut mentah ke prompt Validator).
-  if (reportPeriod.length > MAX_REPORT_PERIOD || /[\r\n]/.test(reportPeriod)) {
-    return NextResponse.json(
-      { error: `Periode report maksimal ${MAX_REPORT_PERIOD} karakter, tanpa baris baru.` },
-      { status: 400 }
-    );
-  }
 
-  // `detected: true` = pengisian dari Deteksi Bulan Otomatis, bukan ketikan operator.
-  // Aturan "autofill HANYA saat kosong" ditegakkan DI SERVER, bukan dipercayakan ke client:
-  // beberapa foto dideteksi paralel, dan yang kedua tak boleh menimpa yang pertama —
-  // apalagi menimpa nilai yang sudah disunting manusia.
-  const fromDetection = b.detected === true;
-  if (fromDetection) {
-    if (reportPeriod === "") {
-      return NextResponse.json({ error: "Periode kosong." }, { status: 400 });
-    }
-    if ((report.reportPeriod ?? "").trim() !== "") {
-      return NextResponse.json({
-        report: { reportPeriod: report.reportPeriod, periodDetected: report.periodDetected },
-        changed: false,
-      });
-    }
-  }
+  const readMonth = (v: unknown, label: string): { ok: true; value: string | null } | { ok: false; error: string } => {
+    if (v === undefined || v === null || v === "") return { ok: true, value: null };
+    if (typeof v !== "string" || !isValidPeriodMonth(v)) return { ok: false, error: `${label} tidak valid.` };
+    return { ok: true, value: v };
+  };
+  const utamaR = readMonth(b.periodeUtama, "Periode utama");
+  if (!utamaR.ok) return NextResponse.json({ error: utamaR.error }, { status: 400 });
+  const pembandingR = readMonth(b.periodePembanding, "Periode pembanding");
+  if (!pembandingR.ok) return NextResponse.json({ error: pembandingR.error }, { status: 400 });
+  const periodeUtama = utamaR.value;
+  let periodePembanding = pembandingR.value;
+  if (!periodeUtama) periodePembanding = null;
+  if (periodePembanding && periodePembanding === periodeUtama) periodePembanding = null;
 
-  const updated = await prisma.report.update({
+  // Re-denormalisasi reportPeriod HANYA bila nilainya masih cermin periodeUtama lama.
+  // Deteksi label kustom: reportPeriod lama !== formatMonthID(periodeUtama lama). Termasuk
+  // kasus periodeUtama lama null + reportPeriod terisi -> pasti kustom (jangan sentuh).
+  const oldMirror = report.periodeUtama ? formatMonthID(report.periodeUtama) : null;
+  const isCustomLabel =
+    (report.reportPeriod ?? "").trim() !== "" && report.reportPeriod !== oldMirror;
+  const reportPeriod = isCustomLabel
+    ? report.reportPeriod
+    : periodeUtama
+      ? formatMonthID(periodeUtama)
+      : null;
+
+  await prisma.report.update({
     where: { id },
     data: {
-      reportPeriod: reportPeriod === "" ? null : reportPeriod,
-      // Disunting manusia -> permanen; deteksi berikutnya tidak akan menimpanya lagi.
-      periodDetected: fromDetection,
+      periodeUtama,
+      periodePembanding,
+      reportPeriod,
+      // Disunting manusia -> bukan lagi hasil deteksi; ekstraksi tak menimpanya lagi.
+      periodDetected: false,
     },
-    select: { reportPeriod: true, periodDetected: true },
   });
 
-  return NextResponse.json({ report: updated, changed: true });
+  // Pemilihan foto "periode utama" berubah -> kontribusi turunan dihitung ulang.
+  // Gagal di sini tak menggagalkan penyimpanan pasangan (Prinsip #3).
+  try {
+    await recomputeDerivedMetrics(id);
+  } catch {
+    /* diamkan — pasangan sudah tersimpan; hitung-ulang berikutnya memperbaikinya */
+  }
+
+  return NextResponse.json({
+    report: { periodeUtama, periodePembanding, reportPeriod, periodDetected: false },
+    changed: true,
+  });
 }
