@@ -26,7 +26,12 @@ export default async function ReportDetailPage({
           // metrics ikut dibaca supaya tabel koreksi tahu TIPE tiap angka — durasi
           // ditampilkan & diedit sebagai "1j 23mnt", bukan detik mentah.
           section: {
-            select: { id: true, name: true, metrics: { select: { key: true, type: true } } },
+            select: {
+              id: true,
+              name: true,
+              // subGroupKey ikut: metrik bernama sama di sub-grup berbeda punya tipe sendiri.
+              metrics: { select: { key: true, type: true, subGroupKey: true } },
+            },
           },
           extractions: { orderBy: { key: "asc" } },
         },
@@ -143,13 +148,19 @@ export default async function ReportDetailPage({
       platform: true,
       narrativeOrder: true,
       usesPeriodComparison: true,
+      // Fase 1 — sub-grup: dipakai untuk dropdown label foto & pencocokan teks tab.
+      subGroups: { select: { key: true, label: true, aliases: true }, orderBy: { order: "asc" } },
     },
   });
 
   const initialUploads = report.uploads.map((u) => {
     // Tipe metrik dicocokkan per key. Metrik yang sudah dihapus dari section tapi
     // angkanya masih tersimpan jatuh ke "number" — apa adanya, seperti sebelumnya.
-    const typeByKey = new Map(u.section.metrics.map((m) => [m.key, m.type]));
+    // DI-SCOPE ke sub-grup foto: "penjualan" bisa ada di beberapa sub-grup, dan peta tak
+    // ber-scope diam-diam menyimpan yang terakhir menang.
+    const typeByKey = new Map(
+      u.section.metrics.filter((m) => m.subGroupKey === u.subGroupKey).map((m) => [m.key, m.type])
+    );
     return {
       id: u.id,
       sectionId: u.sectionId,
@@ -158,6 +169,7 @@ export default async function ReportDetailPage({
       imageSrc: `/api/uploads/${u.id}/image`,
       periodMonth: u.periodMonth,
       isPrimaryPeriod: u.isPrimaryPeriod,
+      subGroupKey: u.subGroupKey,
       extractions: u.extractions.map((e) => ({
         id: e.id,
         key: e.key,

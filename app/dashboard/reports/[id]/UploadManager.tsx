@@ -6,10 +6,13 @@ import { missingPhotoSections, groupBySection, formatValueID } from "@/lib/uploa
 import { formatDurationID, parseDurationToSeconds } from "@/lib/duration";
 import { MAX_TEXT_LENGTH } from "@/lib/text-metric";
 import { ANALYSIS_MAX_PX } from "@/lib/merge-suggest";
+import { matchSubGroup } from "@/lib/subgroups";
 import { parsePointLine, splitByNumbers } from "@/lib/insight-format";
 import { monthOptions, formatMonthID } from "@/lib/period";
 import { MAX_UPLOAD_BYTES } from "@/lib/reports";
 import MergePhotosModal from "./MergePhotosModal";
+
+type SubGroupOption = { key: string; label: string; aliases: string[] };
 
 type SectionOption = {
   id: string;
@@ -18,6 +21,9 @@ type SectionOption = {
   narrativeOrder: number;
   // Tahap 6b — section ini pakai perbandingan periode: foto ditandai bulan + satu utama.
   usesPeriodComparison: boolean;
+  // Fase 1 — section terdiri dari beberapa tool berfoto terpisah (Flash Sale/Diskon/…).
+  // Kosong = section biasa; dropdown sub-grup tidak muncul sama sekali.
+  subGroups: SubGroupOption[];
 };
 
 type ExtractionStatus = "ok" | "missing" | "low_confidence";
@@ -47,6 +53,7 @@ type SavedUpload = {
   // Tahap 6b — hanya terisi untuk section ber-perbandingan-periode.
   periodMonth: string | null;
   isPrimaryPeriod: boolean;
+  subGroupKey: string;
   extractions: Extraction[];
 };
 
@@ -126,6 +133,12 @@ type PendingItem = {
   periodDetecting: boolean;
   periodDetected: boolean;
   periodTouched: boolean;
+  // Fase 1 — sub-grup foto. tabLabel disimpan APA ADANYA dari pembaca konteks; pencocokan
+  // ke sub-grup baru bisa dilakukan setelah section dipilih (KB-nya milik section).
+  tabLabel: string | null;
+  subGroupKey: string;
+  subGroupDetected: boolean;
+  subGroupTouched: boolean;
 };
 
 // Daftar poin dengan sub-poin SATU tingkat (Fase C — prefix tab di storage) + bold angka
@@ -209,6 +222,10 @@ export default function UploadManager({
   const sectionName = (id: string) => sections.find((s) => s.id === id)?.name ?? id;
   const sectionUsesComparison = (id: string) =>
     sections.find((s) => s.id === id)?.usesPeriodComparison ?? false;
+  const sectionSubGroups = (id: string): SubGroupOption[] =>
+    sections.find((s) => s.id === id)?.subGroups ?? [];
+  const subGroupLabel = (sectionId: string, key: string) =>
+    sectionSubGroups(sectionId).find((g) => g.key === key)?.label ?? key;
   // Dropdown penanda bulan (Tahap 6b): 13 bulan terakhir berjalan, dihitung sekali per mount.
   const [monthOpts] = useState(() => monthOptions(new Date(), 13));
 
@@ -225,6 +242,10 @@ export default function UploadManager({
       periodDetecting: false,
       periodDetected: false,
       periodTouched: false,
+      tabLabel: null,
+      subGroupKey: "",
+      subGroupDetected: false,
+      subGroupTouched: false,
       error:
         file.size > MAX_UPLOAD_BYTES
           ? `Ukuran ${(file.size / 1024 / 1024).toFixed(1)} MB melebihi batas 10 MB.`
@@ -284,15 +305,28 @@ export default function UploadManager({
       if (!res.ok) return;
       const data = await res.json().catch(() => ({}));
       const month = typeof data.month === "string" ? data.month : null;
-      if (!month) return;
+      const tabLabel = typeof data.tabLabel === "string" ? data.tabLabel : null;
       // Pilihan manual MENANG, termasuk kalau operator memilih selagi deteksi berjalan.
       setPending((prev) =>
-        prev.map((p) =>
-          p.localId === localId && !p.periodTouched && p.periodMonth === ""
-            ? { ...p, periodMonth: month, periodDetected: true }
-            : p
-        )
+        prev.map((p) => {
+          if (p.localId !== localId) return p;
+          const next = { ...p, tabLabel };
+          if (month && !p.periodTouched && p.periodMonth === "") {
+            next.periodMonth = month;
+            next.periodDetected = true;
+          }
+          // Sub-grup baru bisa dicocokkan kalau section-nya sudah dipilih — daftar
+          // sub-grup milik section, bukan milik foto. Kalau belum, tabLabel disimpan dan
+          // pencocokannya menyusul saat operator memilih section (lihat pickSectionFor).
+          const matched = matchSubGroup(tabLabel, sectionSubGroups(p.sectionId));
+          if (matched && !p.subGroupTouched && p.subGroupKey === "") {
+            next.subGroupKey = matched;
+            next.subGroupDetected = true;
+          }
+          return next;
+        })
       );
+      if (!month) return;
       // Bulan report ikut terisi dari foto pertama yang terdeteksi. Aturan "hanya saat
       // kosong" ditegakkan SERVER, jadi deteksi paralel tidak saling menimpa.
       const patched = await fetch(`/api/reports/${reportId}`, {
@@ -314,7 +348,7 @@ export default function UploadManager({
   // dipilih di baris antrean seperti foto tunggal; server tidak tahu bedanya sama sekali.
   const [mergeOpen, setMergeOpen] = useState(false);
 
-  function onMerged(file: File, sectionId: string) {
+  function onMerged(file: File, sectionId: string, mergedSubGroupKey?: string) {
     const localId = `p${localCounter++}`;
     setPending((prev) => [
       ...prev,
@@ -329,6 +363,12 @@ export default function UploadManager({
         periodDetecting: false,
         periodDetected: false,
         periodTouched: false,
+        tabLabel: null,
+        // Hasil Gabung Foto mewarisi label sub-grup sumbernya (aturan 1c) — modal yang
+        // menentukan, karena ia yang tahu foto-foto asalnya.
+        subGroupKey: mergedSubGroupKey ?? "",
+        subGroupDetected: false,
+        subGroupTouched: Boolean(mergedSubGroupKey),
         error:
           file.size > MAX_UPLOAD_BYTES
             ? `Ukuran ${(file.size / 1024 / 1024).toFixed(1)} MB melebihi batas 10 MB.`
@@ -342,6 +382,26 @@ export default function UploadManager({
 
   function patchPending(localId: string, patch: Partial<PendingItem>) {
     setPending((prev) => prev.map((p) => (p.localId === localId ? { ...p, ...patch } : p)));
+  }
+
+  // Section baru dipilih SETELAH foto masuk antrean, jadi pencocokan teks tab -> sub-grup
+  // dijalankan di sini juga (deteksi bisa selesai lebih dulu maupun belakangan).
+  function pickSectionFor(localId: string, sectionId: string) {
+    setPending((prev) =>
+      prev.map((p) => {
+        if (p.localId !== localId) return p;
+        const matched = matchSubGroup(p.tabLabel, sectionSubGroups(sectionId));
+        return {
+          ...p,
+          sectionId,
+          error: "",
+          // Ganti section = daftar sub-grup berganti; pilihan lama tak lagi berlaku.
+          subGroupKey: matched ?? "",
+          subGroupDetected: matched !== null,
+          subGroupTouched: false,
+        };
+      })
+    );
   }
 
   function removePending(localId: string) {
@@ -358,6 +418,13 @@ export default function UploadManager({
       patchPending(item.localId, { error: "Pilih label section dulu." });
       return;
     }
+    const groups = sectionSubGroups(item.sectionId);
+    if (groups.length > 0 && !item.subGroupKey) {
+      patchPending(item.localId, {
+        error: `Section ini punya sub-grup (${groups.map((g) => g.label).join(", ")}) — pilih dulu sub-grup foto ini.`,
+      });
+      return;
+    }
     const usesComparison = sectionUsesComparison(item.sectionId);
     if (usesComparison && !item.periodMonth) {
       patchPending(item.localId, {
@@ -370,6 +437,9 @@ export default function UploadManager({
     const fd = new FormData();
     fd.append("file", item.file);
     fd.append("sectionId", item.sectionId);
+    if (sectionSubGroups(item.sectionId).length > 0) {
+      fd.append("subGroupKey", item.subGroupKey);
+    }
     if (usesComparison) {
       fd.append("periodMonth", item.periodMonth);
       fd.append("isPrimaryPeriod", String(item.isPrimaryPeriod));
@@ -392,7 +462,9 @@ export default function UploadManager({
       URL.revokeObjectURL(item.previewUrl);
       setSaved((prev) => [
         ...prev.map((u) =>
-          data.upload.isPrimaryPeriod && u.sectionId === data.upload.sectionId
+          data.upload.isPrimaryPeriod &&
+          u.sectionId === data.upload.sectionId &&
+          u.subGroupKey === (data.upload.subGroupKey ?? "_default")
             ? { ...u, isPrimaryPeriod: false }
             : u
         ),
@@ -404,6 +476,7 @@ export default function UploadManager({
           imageSrc: `/api/uploads/${data.upload.id}/image`,
           periodMonth: data.upload.periodMonth ?? null,
           isPrimaryPeriod: Boolean(data.upload.isPrimaryPeriod),
+          subGroupKey: data.upload.subGroupKey ?? "_default",
           extractions: [],
         },
       ]);
@@ -458,7 +531,11 @@ export default function UploadManager({
           };
         }
         // Utama baru meng-unset utama lama section yang sama (cermin transaksi server).
-        if (patch.isPrimaryPeriod && s.sectionId === u.sectionId) {
+        if (
+          patch.isPrimaryPeriod &&
+          s.sectionId === u.sectionId &&
+          s.subGroupKey === u.subGroupKey
+        ) {
           return { ...s, isPrimaryPeriod: false };
         }
         return s;
@@ -1185,7 +1262,7 @@ export default function UploadManager({
                 <p className="truncate text-xs text-fg-3">{item.file.name}</p>
                 <select
                   value={item.sectionId}
-                  onChange={(e) => patchPending(item.localId, { sectionId: e.target.value, error: "" })}
+                  onChange={(e) => pickSectionFor(item.localId, e.target.value)}
                   className="mt-1.5 select w-full"
                 >
                   <option value="">— pilih section —</option>
@@ -1195,6 +1272,49 @@ export default function UploadManager({
                     </option>
                   ))}
                 </select>
+                {/* Fase 1 — section ber-sub-grup: WAJIB pilih tool mana yang difoto.
+                    Section biasa: blok ini tidak dirender sama sekali. */}
+                {item.sectionId && sectionSubGroups(item.sectionId).length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                    <select
+                      value={item.subGroupKey}
+                      onChange={(e) =>
+                        // Pilihan manual menang PERMANEN atas deteksi yang datang belakangan.
+                        patchPending(item.localId, {
+                          subGroupKey: e.target.value,
+                          subGroupTouched: true,
+                          subGroupDetected: false,
+                          error: "",
+                        })
+                      }
+                      className="select w-full"
+                    >
+                      <option value="">— sub-grup foto ini —</option>
+                      {sectionSubGroups(item.sectionId).map((g) => (
+                        <option key={g.key} value={g.key}>
+                          {g.label}
+                        </option>
+                      ))}
+                    </select>
+                    {item.periodDetecting && (
+                      <span className="text-[10px] text-fg-3">membaca tab…</span>
+                    )}
+                    {item.subGroupDetected && (
+                      <span
+                        title={`Dicocokkan dari teks tab "${item.tabLabel ?? ""}". Ubah kapan saja.`}
+                        className="badge bg-accent/15 px-2 text-[10px] text-accent-hi"
+                      >
+                        terdeteksi
+                      </span>
+                    )}
+                    {!item.subGroupKey && !item.periodDetecting && item.tabLabel && (
+                      <span className="text-[10px] text-warn">
+                        tab &ldquo;{item.tabLabel}&rdquo; tidak cocok — pilih manual
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 {/* Tahap 6b — section ber-perbandingan: WAJIB pilih bulan foto ini +
                     tandai EKSPLISIT bila ini periode utama (tidak pernah otomatis). */}
                 {item.sectionId && sectionUsesComparison(item.sectionId) && (
@@ -1327,7 +1447,14 @@ export default function UploadManager({
                   </div>
                   <div className="mt-1.5 space-y-3">
                     {g.items.map((u, srcIdx) => {
-                      const cardTitle = g.multiSource ? `Sumber #${srcIdx + 1}` : groupName;
+                      // Foto section ber-sub-grup diberi label toolnya — tanpa ini
+                      // operator tak bisa membedakan foto Flash Sale dari foto Voucher.
+                      const sub =
+                        sectionSubGroups(u.sectionId).length > 0
+                          ? subGroupLabel(u.sectionId, u.subGroupKey)
+                          : null;
+                      const baseTitle = g.multiSource ? `Sumber #${srcIdx + 1}` : groupName;
+                      const cardTitle = sub ? `${sub} · ${baseTitle}` : baseTitle;
                       const lightboxLabel = g.multiSource
                         ? `${groupName} — Sumber #${srcIdx + 1}`
                         : groupName;

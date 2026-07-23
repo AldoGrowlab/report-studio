@@ -358,6 +358,25 @@ referensi metrik turunan (Fase 2) — ref menunjuk kunci yang sama persis.
   dan ambiguitas di jalur angka melanggar Prinsip #1.
 - **Nama lengkap** `"<Label Sub-grup> — <Nama Metrik>"` dipakai Analyst, Validator, dan PPT.
   Tanpa sub-grup: nama metrik apa adanya.
+- **`/api/period-detect` jadi PEMBACA KONTEKS FOTO**, bukan lagi khusus bulan: satu
+  panggilan mengembalikan `{ periodText, tabLabel }`. Konteks foto memang satu tarikan, dan
+  endpoint kedua berarti dua kali biaya untuk gambar yang sama. Model hanya MENYALIN teks
+  tab aktif; pencocokan ke sub-grup murni kode. Tab tak terbaca / tak yakin → `null`.
+- **Pencocokan tab dijalankan SETELAH section dipilih.** Saat foto masuk antrean,
+  section-nya belum ditentukan — padahal daftar sub-grup milik section. Karena itu
+  `tabLabel` disimpan apa adanya di baris antrean, lalu dicocokkan pada dua momen: saat
+  hasil deteksi tiba, dan saat operator memilih section (mana pun yang belakangan).
+  Ganti section = daftar sub-grup berganti, jadi pilihan lamanya direset.
+- **Pilihan manual menang PERMANEN** atas deteksi yang datang belakangan — pola sama
+  dengan deteksi bulan. Tab yang terbaca tapi tak cocok ditampilkan apa adanya
+  ("tab X tidak cocok — pilih manual"), bukan disembunyikan.
+- **Ekstraksi BER-SCOPE**: satu foto hanya membawa expected metrics milik sub-grupnya.
+  Mengirim daftar campuran berarti model diminta mencari metrik yang memang tidak ada di
+  gambar itu — hasilnya missing palsu, atau lebih buruk, angka tool lain ditempelkan ke
+  sini. Foto tanpa sub-grup di section ber-sub-grup: **ekstraksi DITAHAN** dengan pesan
+  "pilih sub-grup dulu", bukan diekstrak dengan daftar campuran.
+- **"Satu bulan satu foto" dan "satu periode utama" kini per (report, section, SUB-GRUP)** —
+  tiap tool punya periode utamanya sendiri, karena perbandingan antar bulan juga per tool.
 - **Foto menyimpan `subGroupKey` sebagai STRING, bukan FK** — sama seperti `Extraction.key`
   terhadap metrik. Founder menata ulang KB tidak menghapus foto yang sudah ada.
 

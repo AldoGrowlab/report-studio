@@ -6,9 +6,12 @@ import { getSession } from "@/lib/session";
 import { canAccessReport, MAX_UPLOAD_BYTES } from "@/lib/reports";
 import { getStorage, isAllowedImageType, buildImageKey } from "@/lib/storage";
 import { isValidPeriodMonth, formatMonthID } from "@/lib/period";
+import { DEFAULT_SUB_GROUP_KEY } from "@/lib/subgroups";
 
 // POST — upload satu screenshot + label section (satu foto satu label).
-// Body: multipart/form-data { file, sectionId, periodMonth?, isPrimaryPeriod? }
+// Body: multipart/form-data { file, sectionId, subGroupKey?, periodMonth?, isPrimaryPeriod? }
+// subGroupKey WAJIB untuk section ber-sub-grup (Fase 1); untuk section biasa diabaikan
+// (jatuh ke sentinel "_default").
 // periodMonth ("YYYY-MM") WAJIB untuk section ber-perbandingan-periode (Tahap 6b);
 // untuk section biasa diabaikan (null/false). isPrimaryPeriod: maks SATU per
 // (report, section) — menandai utama baru meng-unset yang lama (transaksi).
@@ -72,6 +75,26 @@ export async function POST(request: Request, ctx: RouteContext<"/api/reports/[id
     );
   }
 
+  // Fase 1 — sub-grup foto. Section ber-sub-grup WAJIB dilabeli: tanpa itu ekstraksi tak
+  // tahu daftar metrik mana yang berlaku, dan angkanya bisa masuk tool yang salah.
+  const subGroups = await prisma.sectionSubGroup.findMany({
+    where: { sectionId: section.id },
+    select: { key: true, label: true },
+  });
+  let subGroupKey = DEFAULT_SUB_GROUP_KEY;
+  if (subGroups.length > 0) {
+    const raw = form.get("subGroupKey");
+    if (typeof raw !== "string" || !subGroups.some((g) => g.key === raw)) {
+      return NextResponse.json(
+        {
+          error: `Section ini punya sub-grup (${subGroups.map((g) => g.label).join(", ")}) — pilih sub-grup untuk foto ini.`,
+        },
+        { status: 400 }
+      );
+    }
+    subGroupKey = raw;
+  }
+
   // Tahap 6b — penanda periode, HANYA berlaku untuk section ber-perbandingan.
   let periodMonth: string | null = null;
   let isPrimaryPeriod = false;
@@ -86,10 +109,11 @@ export async function POST(request: Request, ctx: RouteContext<"/api/reports/[id
     periodMonth = rawMonth;
     isPrimaryPeriod = form.get("isPrimaryPeriod") === "true";
 
-    // Satu bulan = SATU foto per (report, section) — perbandingan berantai butuh tepat
-    // satu nilai per metrik per bulan (Tahap 6b-B; tanpa ini persen jadi ambigu).
+    // Satu bulan = SATU foto per (report, section, SUB-GRUP) — perbandingan berantai butuh
+    // tepat satu nilai per metrik per bulan (Tahap 6b-B; tanpa ini persen jadi ambigu).
+    // Flash Sale Juni dan Voucher Juni adalah dua foto SAH, jadi scope-nya ikut sub-grup.
     const duplicate = await prisma.upload.findFirst({
-      where: { reportId, sectionId: section.id, periodMonth },
+      where: { reportId, sectionId: section.id, subGroupKey, periodMonth },
     });
     if (duplicate) {
       return NextResponse.json(
@@ -122,8 +146,10 @@ export async function POST(request: Request, ctx: RouteContext<"/api/reports/[id
     upload = await prisma.$transaction(async (tx) => {
       if (isPrimaryPeriod) {
         // Satu utama per (report, section): utama baru meng-unset yang lama.
+        // Satu utama per (report, section, SUB-GRUP) — tiap tool punya periode utamanya
+        // sendiri, karena perbandingan antar bulan juga dihitung per tool.
         await tx.upload.updateMany({
-          where: { reportId, sectionId: section.id, isPrimaryPeriod: true },
+          where: { reportId, sectionId: section.id, subGroupKey, isPrimaryPeriod: true },
           data: { isPrimaryPeriod: false },
         });
       }
@@ -136,6 +162,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/reports/[id
           labelConfirmed: true,
           periodMonth,
           isPrimaryPeriod,
+          subGroupKey,
         },
         include: { section: { select: { id: true, name: true } } },
       });

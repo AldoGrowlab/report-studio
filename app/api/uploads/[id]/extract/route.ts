@@ -4,6 +4,7 @@ import { getSession } from "@/lib/session";
 import { canAccessReport } from "@/lib/reports";
 import { getStorage } from "@/lib/storage";
 import { extractMetrics, type ExpectedMetric } from "@/lib/extractor";
+import { isDefaultSubGroup } from "@/lib/subgroups";
 import { parsePeriodText, toPeriodMonth } from "@/lib/period-parser";
 import { formatMonthID } from "@/lib/period";
 
@@ -21,7 +22,14 @@ export async function POST(_request: Request, ctx: RouteContext<"/api/uploads/[i
     where: { id },
     include: {
       report: { select: { id: true, createdById: true, reportPeriod: true, periodDetected: true } },
-      section: { select: { name: true, platform: true, metrics: true } },
+      section: {
+        select: {
+          name: true,
+          platform: true,
+          metrics: true,
+          subGroups: { select: { key: true, label: true } },
+        },
+      },
     },
   });
   if (!upload) {
@@ -31,14 +39,32 @@ export async function POST(_request: Request, ctx: RouteContext<"/api/uploads/[i
     return NextResponse.json({ error: "Tidak diizinkan." }, { status: 403 });
   }
 
-  const metrics: ExpectedMetric[] = upload.section.metrics.map((m) => ({
-    key: m.key,
-    label: m.label,
-    type: m.type,
-  }));
+  // Fase 1 — ekstraksi ber-scope: satu foto hanya membawa metrik MILIK SUB-GRUPNYA.
+  // Mengirim daftar campuran ke model berarti ia diminta mencari metrik yang memang tak
+  // ada di gambar itu — hasilnya missing palsu, atau lebih buruk, angka tool lain
+  // ditempelkan ke sini.
+  const subGroups = upload.section.subGroups;
+  if (subGroups.length > 0 && isDefaultSubGroup(upload.subGroupKey)) {
+    return NextResponse.json(
+      {
+        error: `Foto ini belum punya sub-grup. Pilih sub-grup dulu (${subGroups
+          .map((g) => g.label)
+          .join(", ")}) sebelum mengekstrak.`,
+      },
+      { status: 400 }
+    );
+  }
+  const metrics: ExpectedMetric[] = upload.section.metrics
+    .filter((m) => m.subGroupKey === upload.subGroupKey)
+    .map((m) => ({ key: m.key, label: m.label, type: m.type }));
   if (metrics.length === 0) {
     return NextResponse.json(
-      { error: "Section tidak punya expected metrics." },
+      {
+        error:
+          subGroups.length > 0
+            ? "Sub-grup foto ini tidak punya expected metrics di KB."
+            : "Section tidak punya expected metrics.",
+      },
       { status: 400 }
     );
   }
@@ -50,8 +76,11 @@ export async function POST(_request: Request, ctx: RouteContext<"/api/uploads/[i
 
   let outcome;
   try {
+    // Nama section yang dikirim ke model ikut menyebut sub-grupnya, supaya ia tahu tab
+    // mana yang sedang dibaca (mis. "Promotion Tools — Voucher").
+    const subLabel = subGroups.find((g) => g.key === upload.subGroupKey)?.label;
     outcome = await extractMetrics(metrics, image, {
-      sectionName: upload.section.name,
+      sectionName: subLabel ? `${upload.section.name} — ${subLabel}` : upload.section.name,
       platform: upload.section.platform,
     });
   } catch {
@@ -148,7 +177,13 @@ export async function POST(_request: Request, ctx: RouteContext<"/api/uploads/[i
   // TIPE tiap metrik ikut dikirim: tabel koreksi memakainya untuk memilih cara tampil &
   // cara edit (durasi manusiawi, teks sebagai teks). Tanpa ini state client kehilangan
   // `type` begitu hasil ekstraksi diganti dari respons ini.
-  const typeByKey = new Map(upload.section.metrics.map((m) => [m.key, m.type]));
+  // DI-SCOPE ke sub-grup foto: "penjualan" bisa ada di tiga sub-grup dengan tipe berbeda,
+  // dan peta tak ber-scope diam-diam menyimpan yang terakhir menang.
+  const typeByKey = new Map(
+    upload.section.metrics
+      .filter((m) => m.subGroupKey === upload.subGroupKey)
+      .map((m) => [m.key, m.type])
+  );
 
   return NextResponse.json({
     extractor: outcome.extractor,
