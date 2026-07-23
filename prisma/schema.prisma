@@ -169,6 +169,14 @@ model Report {
   // true = reportPeriod diisi otomatis dari foto (badge "terdeteksi dari foto").
   // Edit manual mengembalikannya ke false PERMANEN — deteksi tak pernah menimpa lagi.
   periodDetected Boolean    @default(false)
+  // Poin 2 (Jul 2026) — periode di LEVEL REPORT, kanonik "YYYY-MM". Pasangan bulan
+  // (utama + pembanding opsional) menetapkan label foto & status "periode utama" sebagai
+  // TURUNAN (lib/report-period.ts), menggantikan flag Upload.isPrimaryPeriod (dibuang 2c).
+  // periodeUtama di-backfill dari reportPeriod saat migrasi; label kustom yang tak terparse
+  // -> null (report "tanpa periode" secara logika). reportPeriod dipertahankan sbg label
+  // tampilan fallback yang DEPRECATED & read-only — tak pernah dibaca logika.
+  periodeUtama      String?
+  periodePembanding String?
   // Nama brand/toko yang dilaporkan (Jul 2026). Nullable: report lama tak punya.
   brandName    String?
   platforms    Platform[]

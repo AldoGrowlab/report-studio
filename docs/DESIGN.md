@@ -506,6 +506,26 @@ Label sama-sama dikirim ke prompt vision** (`lib/extractor.ts`, format
 
 ## Perbandingan Periode (properti sebagian section)
 
+> **TRANSISI ke periode level-report (Poin 2, mulai Jul 2026).** Pasangan bulan (periode
+> **utama** + **pembanding** opsional) kini atribut REPORT (`Report.periodeUtama`,
+> `Report.periodePembanding`, kanonik "YYYY-MM"), ditetapkan saat pembuatan report. Label
+> bulan foto hanya boleh salah satu dari pasangan itu, dan status "periode utama" foto jadi
+> **turunan** (`bulanFoto == periodeUtama`, `lib/report-period.ts`) — menggantikan flag
+> `Upload.isPrimaryPeriod` per foto.
+> - **2a (SELESAI):** kolom pasangan + helper murni (`isPrimaryMonth`, `periodMonthOptions`,
+>   `matchMonthToPair`, `displayReportPeriod`) + migrasi ADITIF + backfill
+>   `reportPeriod → periodeUtama` (label kustom tak terparse → null). Konsumen BELUM disentuh
+>   → perilaku report lama identik.
+> - **2b:** konsumen (rantai perbandingan, kontribusi turunan, kelengkapan, urutan PPT,
+>   dropdown bulan foto, deteksi bulan sebagai pencocok) beralih membaca dari pasangan.
+> - **2c:** edit pasangan + warning anomali + recompute; migrasi buang `isPrimaryPeriod`.
+> - **`reportPeriod` DIPERTAHANKAN** sebagai label tampilan fallback (deprecated, read-only,
+>   tak pernah dibaca logika). Aturan tampilan tunggal di semua tempat:
+>   `formatMonthID(periodeUtama) ?? reportPeriod ?? "Periode belum ditentukan"`.
+>
+> Deskripsi di bawah adalah model per-foto LAMA; masih akurat untuk kode yang belum beralih
+> (sampai 2b), lalu diperbarui saat konsumen pindah.
+
 - **Opt-in per section.** Founder menandai saat membuat section apakah section itu memakai
   perbandingan periode. TIDAK semua section pakai.
 - **Penanda bulan di level FOTO/UPLOAD, bukan report.** Untuk section yang pakai: user mengunggah
