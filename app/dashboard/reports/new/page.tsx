@@ -165,8 +165,8 @@ export default function NewReportPage() {
                 ))}
             </select>
             <p className="mt-1.5 text-xs text-fg-3">
-              Bulan foto hanya boleh salah satu dari pasangan ini. Pembanding dipakai section
-              perbandingan antar bulan; kosongkan bila report satu bulan saja.
+              Pembanding dipakai section perbandingan antar bulan; kosongkan bila report satu
+              bulan saja.
             </p>
           </div>
 
